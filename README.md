@@ -10,4 +10,5 @@ As user cesmdata run the rimport script.  This requires a 2FA login, everyone in
 contact cislhelp and request access if you are new to the group.
 
 As owner of the files in /glade/campaign/cesm/cesmdata/inputdata run script relink.py, this will remove the files from /glade/campaign/cesm/cesmdata/inputdata
-and replace them with links to the published data location.  /glade/campaign/cesm/cesmdata/inputdata
+and replace them with links to the published data location.  /glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/
+
