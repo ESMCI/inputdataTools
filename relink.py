@@ -2,6 +2,9 @@ import os
 import shutil
 import pwd
 
+DEFAULT_SOURCE_ROOT = '/glade/campaign/cesm/cesmdata/cseg/inputdata/'
+DEFAULT_TARGET_ROOT = '/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/'
+
 def find_and_replace_owned_files(source_dir, target_dir, username):
     """
     Finds files owned by a specific user in a source directory tree,
@@ -75,12 +78,10 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
 
 if __name__ == '__main__':
     # --- Configuration ---
-    # Replace these with your actual directories and username
-    source_root = '/glade/campaign/cesm/cesmdata/cseg/inputdata/'
-    target_root = '/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/'
+
     my_username = os.environ['USER']
 
     # --- Execution ---
-    find_and_replace_owned_files(source_root, target_root, my_username)
+    find_and_replace_owned_files(DEFAULT_SOURCE_ROOT, DEFAULT_TARGET_ROOT, my_username)
     
 
