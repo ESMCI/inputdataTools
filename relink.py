@@ -1,6 +1,15 @@
+"""
+Finds files owned by a specific user in a source directory tree,
+deletes them, and replaces them with symbolic links to the same
+relative path in a target directory tree.
+"""
+
 import os
-import shutil
 import pwd
+import argparse
+
+DEFAULT_SOURCE_ROOT = '/glade/campaign/cesm/cesmdata/cseg/inputdata/'
+DEFAULT_TARGET_ROOT = '/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/'
 
 def find_and_replace_owned_files(source_dir, target_dir, username):
     """
@@ -25,10 +34,10 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
 
     print(f"Searching for files owned by '{username}' (UID: {user_uid}) in '{source_dir}'...")
 
-    for dirpath, dirnames, filenames in os.walk(source_dir):
+    for dirpath, _, filenames in os.walk(source_dir):
         for filename in filenames:
             file_path = os.path.join(dirpath, filename)
-            
+
             # Use os.stat().st_uid to get the file's owner UID
             try:
                 if os.path.islink(file_path):
@@ -38,14 +47,14 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
                 file_uid = os.stat(file_path).st_uid
             except FileNotFoundError:
                 continue # Skip if file was deleted during traversal
-            
+
             if file_uid == user_uid:
                 print(f"Found owned file: {file_path}")
 
                 # Determine the relative path and the new link's destination
                 relative_path = os.path.relpath(file_path, source_dir)
                 link_target = os.path.join(target_dir, relative_path)
-                
+
                 # Check if the target file actually exists
                 if not os.path.exists(link_target):
                     print(f"Warning: Corresponding file not found in '{target_dir}' for '{file_path}'. Skipping.")
@@ -73,14 +82,41 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
                     os.rename(link_name+".tmp", link_name)
                     print(f"Error creating symlink for {link_name}: {e}. Skipping.")
 
+def parse_arguments():
+    """
+    Parse command-line arguments.
+
+    Returns:
+        argparse.Namespace: Parsed arguments containing source_root
+                            and target_root.
+    """
+    parser = argparse.ArgumentParser(
+        description=(
+            'Find files owned by a user and replace them with symbolic links to a target directory.'
+        )
+    )
+    parser.add_argument(
+        '--source-root',
+        default=DEFAULT_SOURCE_ROOT,
+        help=(
+            f'The root of the directory tree to search for files (default: {DEFAULT_SOURCE_ROOT})'
+        )
+    )
+    parser.add_argument(
+        '--target-root',
+        default=DEFAULT_TARGET_ROOT,
+        help=(
+            f'The root of the directory tree where files should be moved to '
+            f'(default: {DEFAULT_TARGET_ROOT})'
+        )
+    )
+
+    return parser.parse_args()
+
 if __name__ == '__main__':
     # --- Configuration ---
-    # Replace these with your actual directories and username
-    source_root = '/glade/campaign/cesm/cesmdata/cseg/inputdata/'
-    target_root = '/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/'
+    args = parse_arguments()
     my_username = os.environ['USER']
 
     # --- Execution ---
-    find_and_replace_owned_files(source_root, target_root, my_username)
-    
-
+    find_and_replace_owned_files(args.source_root, args.target_root, my_username)
