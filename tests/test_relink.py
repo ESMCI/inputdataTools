@@ -120,8 +120,6 @@ class TestFindAndReplaceOwnedFiles:
 
         # Get the inode and mtime before running the function
         stat_before = os.lstat(source_link)
-        inode_before = stat_before.st_ino
-        mtime_before = stat_before.st_mtime
 
         # Run the function
         with caplog.at_level(logging.INFO):
@@ -130,9 +128,11 @@ class TestFindAndReplaceOwnedFiles:
         # Verify the symlink is unchanged (same inode means it wasn't deleted/recreated)
         stat_after = os.lstat(source_link)
         assert (
-            inode_before == stat_after.st_ino
+            stat_before.st_ino == stat_after.st_ino
         ), "Symlink should not have been recreated"
-        assert mtime_before == stat_after.st_mtime, "Symlink mtime should be unchanged"
+        assert (
+            stat_before.st_mtime == stat_after.st_mtime
+        ), "Symlink mtime should be unchanged"
         assert (
             os.readlink(source_link) == dummy_target
         ), "Symlink target should be unchanged"
