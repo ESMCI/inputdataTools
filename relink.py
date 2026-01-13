@@ -1,5 +1,10 @@
+"""
+Finds files owned by a specific user in a source directory tree,
+deletes them, and replaces them with symbolic links to the same
+relative path in a target directory tree.
+"""
+
 import os
-import shutil
 import pwd
 import argparse
 
@@ -29,7 +34,7 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
 
     print(f"Searching for files owned by '{username}' (UID: {user_uid}) in '{source_dir}'...")
 
-    for dirpath, dirnames, filenames in os.walk(source_dir):
+    for dirpath, _, filenames in os.walk(source_dir):
         for filename in filenames:
             file_path = os.path.join(dirpath, filename)
 
