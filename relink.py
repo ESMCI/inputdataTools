@@ -1,6 +1,7 @@
 import os
 import shutil
 import pwd
+import argparse
 
 DEFAULT_SOURCE_ROOT = '/glade/campaign/cesm/cesmdata/cseg/inputdata/'
 DEFAULT_TARGET_ROOT = '/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/'
@@ -76,12 +77,43 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
                     os.rename(link_name+".tmp", link_name)
                     print(f"Error creating symlink for {link_name}: {e}. Skipping.")
 
+def parse_arguments():
+    """
+    Parse command-line arguments.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments containing source_root 
+                            and target_root.
+    """
+    parser = argparse.ArgumentParser(
+        description=(
+            'Find files owned by a user and replace them with symbolic links to a target directory.'
+        )
+    )
+    parser.add_argument(
+        '--source-root',
+        default=DEFAULT_SOURCE_ROOT,
+        help=(
+            f'The root of the directory tree to search for files (default: {DEFAULT_SOURCE_ROOT})'
+        )
+    )
+    parser.add_argument(
+        '--target-root',
+        default=DEFAULT_TARGET_ROOT,
+        help=(
+            f'The root of the directory tree where files should be moved to '
+            f'(default: {DEFAULT_TARGET_ROOT})'
+        )
+    )
+
+    return parser.parse_args()
+
 if __name__ == '__main__':
     # --- Configuration ---
-
+    args = parse_arguments()
     my_username = os.environ['USER']
 
     # --- Execution ---
-    find_and_replace_owned_files(DEFAULT_SOURCE_ROOT, DEFAULT_TARGET_ROOT, my_username)
+    find_and_replace_owned_files(args.source_root, args.target_root, my_username)
     
 
