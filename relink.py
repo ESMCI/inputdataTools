@@ -5,6 +5,7 @@ relative path in a target directory tree.
 """
 
 import os
+import sys
 import pwd
 import argparse
 import logging
@@ -141,9 +142,7 @@ def parse_arguments():
     return parser.parse_args()
 
 if __name__ == '__main__':
-    # Configure logging to display INFO and above to console (stdout)
-    import sys
-    # --- Configuration ---
+
     args = parse_arguments()
 
     # Configure logging based on verbosity flags
