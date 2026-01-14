@@ -101,8 +101,8 @@ def parse_arguments():
     Parse command-line arguments.
 
     Returns:
-        argparse.Namespace: Parsed arguments containing source_root
-                            and target_root.
+        argparse.Namespace: Parsed arguments containing source_root,
+                            target_root, and verbosity settings.
     """
     parser = argparse.ArgumentParser(
         description=(
@@ -125,19 +125,41 @@ def parse_arguments():
         )
     )
 
+    # Verbosity options (mutually exclusive)
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Enable verbose output'
+    )
+    verbosity_group.add_argument(
+        '-q', '--quiet',
+        action='store_true',
+        help='Quiet mode (show only warnings and errors)'
+    )
+
     return parser.parse_args()
 
 if __name__ == '__main__':
     # Configure logging to display INFO and above to console (stdout)
     import sys
+    # --- Configuration ---
+    args = parse_arguments()
+
+    # Configure logging based on verbosity flags
+    if args.quiet:
+        LOG_LEVEL = logging.WARNING
+    elif args.verbose:
+        LOG_LEVEL = logging.DEBUG
+    else:
+        LOG_LEVEL = logging.INFO
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=LOG_LEVEL,
         format='%(message)s',
         stream=sys.stdout
     )
     
-    # --- Configuration ---
-    args = parse_arguments()
     my_username = os.environ['USER']
 
     # --- Execution ---

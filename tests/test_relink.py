@@ -336,6 +336,172 @@ class TestParseArguments:
             assert args.source_root == source_path
             assert args.target_root == target_path
 
+    def test_verbose_flag(self):
+        """Test that --verbose flag is parsed correctly."""
+        with patch("sys.argv", ["relink.py", "--verbose"]):
+            args = relink.parse_arguments()
+            assert args.verbose is True
+            assert args.quiet is False
+
+    def test_quiet_flag(self):
+        """Test that --quiet flag is parsed correctly."""
+        with patch("sys.argv", ["relink.py", "--quiet"]):
+            args = relink.parse_arguments()
+            assert args.quiet is True
+            assert args.verbose is False
+
+    def test_verbose_short_flag(self):
+        """Test that -v flag is parsed correctly."""
+        with patch("sys.argv", ["relink.py", "-v"]):
+            args = relink.parse_arguments()
+            assert args.verbose is True
+
+    def test_quiet_short_flag(self):
+        """Test that -q flag is parsed correctly."""
+        with patch("sys.argv", ["relink.py", "-q"]):
+            args = relink.parse_arguments()
+            assert args.quiet is True
+
+    def test_default_verbosity(self):
+        """Test that default verbosity has both flags as False."""
+        with patch("sys.argv", ["relink.py"]):
+            args = relink.parse_arguments()
+            assert args.verbose is False
+            assert args.quiet is False
+
+    def test_verbose_and_quiet_mutually_exclusive(self):
+        """Test that --verbose and --quiet cannot be used together."""
+        with patch("sys.argv", ["relink.py", "--verbose", "--quiet"]):
+            with pytest.raises(SystemExit) as exc_info:
+                relink.parse_arguments()
+            # Mutually exclusive arguments cause SystemExit with code 2
+            assert exc_info.value.code == 2
+
+    def test_verbose_and_quiet_short_flags_mutually_exclusive(self):
+        """Test that -v and -q cannot be used together."""
+        with patch("sys.argv", ["relink.py", "-v", "-q"]):
+            with pytest.raises(SystemExit) as exc_info:
+                relink.parse_arguments()
+            # Mutually exclusive arguments cause SystemExit with code 2
+            assert exc_info.value.code == 2
+
+
+class TestVerbosityLevels:
+    """Test suite for verbosity level behavior."""
+
+    @pytest.fixture
+    def temp_dirs(self):
+        """Create temporary source and target directories for testing."""
+        source_dir = tempfile.mkdtemp(prefix="test_source_")
+        target_dir = tempfile.mkdtemp(prefix="test_target_")
+
+        yield source_dir, target_dir
+
+        # Cleanup
+        shutil.rmtree(source_dir, ignore_errors=True)
+        shutil.rmtree(target_dir, ignore_errors=True)
+
+    def test_quiet_mode_suppresses_info_messages(self, temp_dirs, caplog):
+        """Test that quiet mode suppresses INFO level messages."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files
+        source_file = os.path.join(source_dir, "test_file.txt")
+        target_file = os.path.join(target_dir, "test_file.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        # Create a symlink to test "Skipping symlink" message
+        source_link = os.path.join(source_dir, "existing_link.txt")
+        dummy_target = os.path.join(tempfile.gettempdir(), "somewhere")
+        os.symlink(dummy_target, source_link)
+
+        # Run the function with WARNING level (quiet mode)
+        with caplog.at_level(logging.WARNING):
+            relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Verify INFO messages are NOT in the log
+        assert "Searching for files owned by" not in caplog.text
+        assert "Skipping symlink:" not in caplog.text
+        assert "Found owned file:" not in caplog.text
+        assert "Deleted original file:" not in caplog.text
+        assert "Created symbolic link:" not in caplog.text
+
+    def test_quiet_mode_shows_warnings(self, temp_dirs, caplog):
+        """Test that quiet mode still shows WARNING level messages."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create only source file (no corresponding target) to trigger warning
+        source_file = os.path.join(source_dir, "orphan.txt")
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("orphan content")
+
+        # Run the function with WARNING level (quiet mode)
+        with caplog.at_level(logging.WARNING):
+            relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Verify WARNING message IS in the log
+        assert "Warning: Corresponding file not found" in caplog.text
+
+    def test_quiet_mode_shows_errors(self, temp_dirs, caplog):
+        """Test that quiet mode still shows ERROR level messages."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Test 1: Invalid username error
+        invalid_username = "nonexistent_user_12345"
+        with caplog.at_level(logging.WARNING):
+            relink.find_and_replace_owned_files(
+                source_dir, target_dir, invalid_username
+            )
+        assert "Error: User" in caplog.text
+        assert "not found" in caplog.text
+
+        # Clear the log for next test
+        caplog.clear()
+
+        # Test 2: Error deleting file
+        source_file = os.path.join(source_dir, "test.txt")
+        target_file = os.path.join(target_dir, "test.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        def mock_rename(src, dst):
+            raise OSError("Simulated rename error")
+
+        with patch("os.rename", side_effect=mock_rename):
+            with caplog.at_level(logging.WARNING):
+                relink.find_and_replace_owned_files(source_dir, target_dir, username)
+            assert "Error deleting file" in caplog.text
+
+        # Clear the log for next test
+        caplog.clear()
+
+        # Test 3: Error creating symlink
+        source_file2 = os.path.join(source_dir, "test2.txt")
+        target_file2 = os.path.join(target_dir, "test2.txt")
+
+        with open(source_file2, "w", encoding="utf-8") as f:
+            f.write("source2")
+        with open(target_file2, "w", encoding="utf-8") as f:
+            f.write("target2")
+
+        def mock_symlink(src, dst):
+            raise OSError("Simulated symlink error")
+
+        with patch("os.symlink", side_effect=mock_symlink):
+            with caplog.at_level(logging.WARNING):
+                relink.find_and_replace_owned_files(source_dir, target_dir, username)
+            assert "Error creating symlink" in caplog.text
+
 
 class TestEdgeCases:
     """Test edge cases and error handling."""
