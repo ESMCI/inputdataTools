@@ -8,6 +8,7 @@ import tempfile
 import shutil
 import pwd
 import logging
+import argparse
 from unittest.mock import patch
 
 import pytest
@@ -524,6 +525,67 @@ class TestTiming:
             assert "seconds" in caplog.text
         else:
             assert "Execution time:" not in caplog.text
+
+
+class TestValidateDirectory:
+    """Test suite for validate_directory function."""
+
+    def test_valid_directory(self, tmp_path):
+        """Test that valid directory is accepted and returns absolute path."""
+        test_dir = tmp_path / "valid_dir"
+        test_dir.mkdir()
+
+        result = relink.validate_directory(str(test_dir))
+        assert result == str(test_dir.resolve())
+
+    def test_nonexistent_directory(self):
+        """Test that nonexistent directory raises ArgumentTypeError."""
+        nonexistent = os.path.join(os.sep, "nonexistent", "directory", "12345")
+
+        with pytest.raises(argparse.ArgumentTypeError) as exc_info:
+            relink.validate_directory(nonexistent)
+
+        assert "does not exist" in str(exc_info.value)
+        assert nonexistent in str(exc_info.value)
+
+    def test_file_instead_of_directory(self, tmp_path):
+        """Test that a file path raises ArgumentTypeError."""
+        test_file = tmp_path / "test_file.txt"
+        test_file.write_text("content")
+
+        with pytest.raises(argparse.ArgumentTypeError) as exc_info:
+            relink.validate_directory(str(test_file))
+
+        assert "not a directory" in str(exc_info.value)
+
+    def test_relative_path_converted_to_absolute(self, tmp_path):
+        """Test that relative paths are converted to absolute."""
+        test_dir = tmp_path / "relative_test"
+        test_dir.mkdir()
+
+        # Change to parent directory and use relative path
+        cwd = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            result = relink.validate_directory("relative_test")
+            assert os.path.isabs(result)
+            assert result == str(test_dir.resolve())
+        finally:
+            os.chdir(cwd)
+
+    def test_symlink_to_directory(self, tmp_path):
+        """Test that symlink to a directory is accepted."""
+        real_dir = tmp_path / "real_dir"
+        real_dir.mkdir()
+
+        link_dir = tmp_path / "link_dir"
+        link_dir.symlink_to(real_dir)
+
+        result = relink.validate_directory(str(link_dir))
+        # validate_directory returns absolute path of the symlink itself
+        assert result == str(link_dir.absolute())
+        # Verify it's still a symlink
+        assert os.path.islink(result)
 
 
 class TestDryRun:
