@@ -529,8 +529,9 @@ class TestTiming:
 class TestDryRun:
     """Test suite for dry-run functionality."""
 
-    def test_dry_run_no_changes(self, temp_dirs, caplog):
-        """Test that dry-run mode makes no actual changes."""
+    @pytest.fixture
+    def dry_run_setup(self, temp_dirs):
+        """Set up directories and files for dry-run tests."""
         source_dir, target_dir = temp_dirs
         username = os.environ["USER"]
 
@@ -542,6 +543,12 @@ class TestDryRun:
             f.write("source content")
         with open(target_file, "w", encoding="utf-8") as f:
             f.write("target content")
+
+        return source_dir, target_dir, source_file, target_file, username
+
+    def test_dry_run_no_changes(self, dry_run_setup, caplog):
+        """Test that dry-run mode makes no actual changes."""
+        source_dir, target_dir, source_file, _, username = dry_run_setup
 
         # Get original file info
         with open(source_file, "r", encoding="utf-8") as f:
@@ -561,19 +568,9 @@ class TestDryRun:
             assert f.read() == original_content
         assert os.path.islink(source_file) == original_is_link
 
-    def test_dry_run_shows_message(self, temp_dirs, caplog):
+    def test_dry_run_shows_message(self, dry_run_setup, caplog):
         """Test that dry-run mode shows what would be done."""
-        source_dir, target_dir = temp_dirs
-        username = os.environ["USER"]
-
-        # Create files
-        source_file = os.path.join(source_dir, "test_file.txt")
-        target_file = os.path.join(target_dir, "test_file.txt")
-
-        with open(source_file, "w", encoding="utf-8") as f:
-            f.write("source")
-        with open(target_file, "w", encoding="utf-8") as f:
-            f.write("target")
+        source_dir, target_dir, source_file, target_file, username = dry_run_setup
 
         # Run in dry-run mode
         with caplog.at_level(logging.INFO):
@@ -586,19 +583,9 @@ class TestDryRun:
         assert "[DRY RUN] Would create symbolic link:" in caplog.text
         assert f"{source_file} -> {target_file}" in caplog.text
 
-    def test_dry_run_no_delete_or_create_messages(self, temp_dirs, caplog):
+    def test_dry_run_no_delete_or_create_messages(self, dry_run_setup, caplog):
         """Test that dry-run doesn't show delete/create messages."""
-        source_dir, target_dir = temp_dirs
-        username = os.environ["USER"]
-
-        # Create files
-        source_file = os.path.join(source_dir, "test_file.txt")
-        target_file = os.path.join(target_dir, "test_file.txt")
-
-        with open(source_file, "w", encoding="utf-8") as f:
-            f.write("source")
-        with open(target_file, "w", encoding="utf-8") as f:
-            f.write("target")
+        source_dir, target_dir, _, _, username = dry_run_setup
 
         # Run in dry-run mode
         with caplog.at_level(logging.INFO):
