@@ -510,6 +510,221 @@ class TestParseArguments:
             assert args.timing is False
 
 
+class TestVerbosityLevels:
+    """Test suite for verbosity level behavior."""
+
+    def test_quiet_mode_suppresses_info_messages(self, temp_dirs, caplog):
+        """Test that quiet mode suppresses INFO level messages."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files
+        source_file = os.path.join(source_dir, "test_file.txt")
+        target_file = os.path.join(target_dir, "test_file.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        # Create a symlink to test "Skipping symlink" message
+        source_link = os.path.join(source_dir, "existing_link.txt")
+        dummy_target = os.path.join(tempfile.gettempdir(), "somewhere")
+        os.symlink(dummy_target, source_link)
+
+        # Run the function with WARNING level (quiet mode)
+        with caplog.at_level(logging.WARNING):
+            relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Verify INFO messages are NOT in the log
+        assert "Searching for files owned by" not in caplog.text
+        assert "Skipping symlink:" not in caplog.text
+        assert "Found owned file:" not in caplog.text
+        assert "Deleted original file:" not in caplog.text
+        assert "Created symbolic link:" not in caplog.text
+
+    def test_quiet_mode_shows_warnings(self, temp_dirs, caplog):
+        """Test that quiet mode still shows WARNING level messages."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create only source file (no corresponding target) to trigger warning
+        source_file = os.path.join(source_dir, "orphan.txt")
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("orphan content")
+
+        # Run the function with WARNING level (quiet mode)
+        with caplog.at_level(logging.WARNING):
+            relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Verify WARNING message IS in the log
+        assert "Warning: Corresponding file not found" in caplog.text
+
+    def test_quiet_mode_shows_errors(self, temp_dirs, caplog):
+        """Test that quiet mode still shows ERROR level messages."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Test 1: Invalid username error
+        invalid_username = "nonexistent_user_12345"
+        with caplog.at_level(logging.WARNING):
+            relink.find_and_replace_owned_files(
+                source_dir, target_dir, invalid_username
+            )
+        assert "Error: User" in caplog.text
+        assert "not found" in caplog.text
+
+        # Clear the log for next test
+        caplog.clear()
+
+        # Test 2: Error deleting file
+        source_file = os.path.join(source_dir, "test.txt")
+        target_file = os.path.join(target_dir, "test.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        def mock_rename(src, dst):
+            raise OSError("Simulated rename error")
+
+        with patch("os.rename", side_effect=mock_rename):
+            with caplog.at_level(logging.WARNING):
+                relink.find_and_replace_owned_files(source_dir, target_dir, username)
+            assert "Error deleting file" in caplog.text
+
+        # Clear the log for next test
+        caplog.clear()
+
+        # Test 3: Error creating symlink
+        source_file2 = os.path.join(source_dir, "test2.txt")
+        target_file2 = os.path.join(target_dir, "test2.txt")
+
+        with open(source_file2, "w", encoding="utf-8") as f:
+            f.write("source2")
+        with open(target_file2, "w", encoding="utf-8") as f:
+            f.write("target2")
+
+        def mock_symlink(src, dst):
+            raise OSError("Simulated symlink error")
+
+        with patch("os.symlink", side_effect=mock_symlink):
+            with caplog.at_level(logging.WARNING):
+                relink.find_and_replace_owned_files(source_dir, target_dir, username)
+            assert "Error creating symlink" in caplog.text
+
+class TestEdgeCases:
+    """Test edge cases and error handling."""
+
+    def test_empty_directories(self, temp_dirs):
+        """Test with empty directories."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Run with empty directories (should not crash)
+        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Should complete without errors
+        assert True
+
+    def test_file_with_spaces_in_name(self, temp_dirs):
+        """Test files with spaces in their names."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files with spaces
+        source_file = os.path.join(source_dir, "file with spaces.txt")
+        target_file = os.path.join(target_dir, "file with spaces.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("content")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target content")
+
+        # Run the function
+        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Verify
+        assert os.path.islink(source_file)
+        assert os.readlink(source_file) == target_file
+
+    def test_file_with_special_characters(self, temp_dirs):
+        """Test files with special characters in names."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files with special chars (that are valid in filenames)
+        filename = "file-with_special.chars@123.txt"
+        source_file = os.path.join(source_dir, filename)
+        target_file = os.path.join(target_dir, filename)
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("content")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target content")
+
+        # Run the function
+        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Verify
+        assert os.path.islink(source_file)
+        assert os.readlink(source_file) == target_file
+
+    def test_error_deleting_file(self, temp_dirs, caplog):
+        """Test error message when file deletion fails."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files
+        source_file = os.path.join(source_dir, "test.txt")
+        target_file = os.path.join(target_dir, "test.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        # Mock os.rename to raise an error
+        def mock_rename(src, dst):
+            raise OSError("Simulated rename error")
+
+        with patch("os.rename", side_effect=mock_rename):
+            # Run the function
+            with caplog.at_level(logging.INFO):
+                relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+            # Check error message
+            assert "Error deleting file" in caplog.text
+            assert source_file in caplog.text
+
+    def test_error_creating_symlink(self, temp_dirs, caplog):
+        """Test error message when symlink creation fails."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create source file
+        source_file = os.path.join(source_dir, "test.txt")
+        target_file = os.path.join(target_dir, "test.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        # Mock os.symlink to raise an error
+        def mock_symlink(src, dst):
+            raise OSError("Simulated symlink error")
+
+        with patch("os.symlink", side_effect=mock_symlink):
+            # Run the function
+            with caplog.at_level(logging.INFO):
+                relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+            # Check error message
+            assert "Error creating symlink" in caplog.text
+            assert source_file in caplog.text
+
 class TestTiming:
     """Test suite for timing functionality."""
 
