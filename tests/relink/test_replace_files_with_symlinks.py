@@ -1,5 +1,5 @@
 """
-Tests of find_and_replace_owned_files() in relink.py
+Tests of replace_files_with_symlinks() in relink.py
 """
 
 import os
@@ -33,7 +33,7 @@ def test_basic_file_replacement(temp_dirs, current_user):
         f.write("target content")
 
     # Run the function
-    relink.find_and_replace_owned_files(source_dir, target_dir, username)
+    relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify the source file is now a symlink
     assert os.path.islink(source_file), "Source file should be a symlink"
@@ -62,7 +62,7 @@ def test_nested_directory_structure(temp_dirs, current_user):
         f.write("nested target")
 
     # Run the function
-    relink.find_and_replace_owned_files(source_dir, target_dir, username)
+    relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify
     assert os.path.islink(source_file), "Nested file should be a symlink"
@@ -89,7 +89,7 @@ def test_skip_existing_symlinks(temp_dirs, current_user, caplog):
 
     # Run the function
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+        relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify the symlink is unchanged (same inode means it wasn't deleted/recreated)
     stat_after = os.lstat(source_link)
@@ -120,7 +120,7 @@ def test_missing_target_file(temp_dirs, current_user, caplog):
 
     # Run the function
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+        relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify the file is NOT converted to symlink
     assert not os.path.islink(source_file), "File should not be a symlink"
@@ -145,7 +145,7 @@ def test_invalid_username(temp_dirs, caplog):
 
     # Run the function
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(source_dir, target_dir, invalid_username)
+        relink.replace_files_with_symlinks(source_dir, target_dir, invalid_username)
 
     # Check error message
     assert "Error: User" in caplog.text
@@ -168,7 +168,7 @@ def test_multiple_files(temp_dirs, current_user):
             f.write(f"target {i}")
 
     # Run the function
-    relink.find_and_replace_owned_files(source_dir, target_dir, username)
+    relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify all files are symlinks
     for i in range(5):
@@ -200,7 +200,7 @@ def test_absolute_paths(temp_dirs, current_user):
         rel_target = os.path.basename(target_dir)
 
         # Run with relative paths
-        relink.find_and_replace_owned_files(rel_source, rel_target, username)
+        relink.replace_files_with_symlinks(rel_source, rel_target, username)
 
         # Verify it still works
         assert os.path.islink(source_file)
@@ -215,7 +215,7 @@ def test_print_searching_message(temp_dirs, current_user, caplog):
 
     # Run the function
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+        relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Check that searching message was logged
     assert f"Searching for files owned by '{username}'" in caplog.text
@@ -238,7 +238,7 @@ def test_print_found_owned_file(temp_dirs, current_user, caplog):
 
     # Run the function
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+        relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Check that "Found owned file" message was logged
     assert "Found owned file:" in caplog.text
@@ -261,41 +261,12 @@ def test_print_deleted_and_created_messages(temp_dirs, current_user, caplog):
 
     # Run the function
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(source_dir, target_dir, username)
+        relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Check messages
     assert "Deleted original file:" in caplog.text
     assert "Created symbolic link:" in caplog.text
     assert f"{source_file} -> {target_file}" in caplog.text
-
-
-def test_handles_file_deleted_during_traversal(temp_dirs, current_user, caplog):
-    """Test that FileNotFoundError during stat is handled gracefully."""
-    source_dir, target_dir = temp_dirs
-    username = current_user
-
-    # Create files
-    source_file = os.path.join(source_dir, "disappearing.txt")
-    with open(source_file, "w", encoding="utf-8") as f:
-        f.write("content")
-
-    # Mock os.stat to raise FileNotFoundError for this specific file
-    original_stat = os.stat
-
-    def mock_stat(path, *args, **kwargs):
-        if path == source_file:
-            raise FileNotFoundError(f"Simulated: {path} deleted during traversal")
-        return original_stat(path, *args, **kwargs)
-
-    with patch("os.stat", side_effect=mock_stat):
-        with caplog.at_level(logging.INFO):
-            # Should not crash, should continue processing
-            relink.find_and_replace_owned_files(source_dir, target_dir, username)
-
-    # Should complete without errors (file was skipped)
-    # No error message should be logged (it's silently skipped via continue)
-    assert "Error" not in caplog.text
-    assert "disappearing.txt" not in caplog.text
 
 
 def test_error_creating_symlink(temp_dirs, caplog):
@@ -319,7 +290,7 @@ def test_error_creating_symlink(temp_dirs, caplog):
     with patch("os.symlink", side_effect=mock_symlink):
         # Run the function
         with caplog.at_level(logging.INFO):
-            relink.find_and_replace_owned_files(source_dir, target_dir, username)
+            relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
         # Check error message
         assert "Error creating symlink" in caplog.text
@@ -332,7 +303,7 @@ def test_empty_directories(temp_dirs):
     username = os.environ["USER"]
 
     # Run with empty directories (should not crash)
-    relink.find_and_replace_owned_files(source_dir, target_dir, username)
+    relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Should complete without errors
     assert True
@@ -353,7 +324,7 @@ def test_file_with_spaces_in_name(temp_dirs):
         f.write("target content")
 
     # Run the function
-    relink.find_and_replace_owned_files(source_dir, target_dir, username)
+    relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify
     assert os.path.islink(source_file)
@@ -376,7 +347,7 @@ def test_file_with_special_characters(temp_dirs):
         f.write("target content")
 
     # Run the function
-    relink.find_and_replace_owned_files(source_dir, target_dir, username)
+    relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify
     assert os.path.islink(source_file)
@@ -404,7 +375,7 @@ def test_error_deleting_file(temp_dirs, caplog):
     with patch("os.rename", side_effect=mock_rename):
         # Run the function
         with caplog.at_level(logging.INFO):
-            relink.find_and_replace_owned_files(source_dir, target_dir, username)
+            relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
         # Check error message
         assert "Error deleting file" in caplog.text

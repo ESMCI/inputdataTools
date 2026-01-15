@@ -45,7 +45,7 @@ def test_dry_run_no_changes(dry_run_setup, caplog):
 
     # Run in dry-run mode
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(
+        relink.replace_files_with_symlinks(
             source_dir, target_dir, username, dry_run=True
         )
 
@@ -63,7 +63,7 @@ def test_dry_run_shows_message(dry_run_setup, caplog):
 
     # Run in dry-run mode
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(
+        relink.replace_files_with_symlinks(
             source_dir, target_dir, username, dry_run=True
         )
 
@@ -79,7 +79,7 @@ def test_dry_run_no_delete_or_create_messages(dry_run_setup, caplog):
 
     # Run in dry-run mode
     with caplog.at_level(logging.INFO):
-        relink.find_and_replace_owned_files(
+        relink.replace_files_with_symlinks(
             source_dir, target_dir, username, dry_run=True
         )
 
