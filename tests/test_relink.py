@@ -48,20 +48,21 @@ def fixture_mock_default_dirs():
     shutil.rmtree(target_dir, ignore_errors=True)
 
 
+@pytest.fixture(scope="function", name="temp_dirs")
+def fixture_temp_dirs():
+    """Create temporary source and target directories for testing."""
+    source_dir = tempfile.mkdtemp(prefix="test_source_")
+    target_dir = tempfile.mkdtemp(prefix="test_target_")
+
+    yield source_dir, target_dir
+
+    # Cleanup
+    shutil.rmtree(source_dir, ignore_errors=True)
+    shutil.rmtree(target_dir, ignore_errors=True)
+
+
 class TestFindAndReplaceOwnedFiles:
     """Test suite for find_and_replace_owned_files function."""
-
-    @pytest.fixture
-    def temp_dirs(self):
-        """Create temporary source and target directories for testing."""
-        source_dir = tempfile.mkdtemp(prefix="test_source_")
-        target_dir = tempfile.mkdtemp(prefix="test_target_")
-
-        yield source_dir, target_dir
-
-        # Cleanup
-        shutil.rmtree(source_dir, ignore_errors=True)
-        shutil.rmtree(target_dir, ignore_errors=True)
 
     @pytest.fixture
     def current_user(self):
@@ -482,18 +483,6 @@ class TestParseArguments:
 class TestTiming:
     """Test suite for timing functionality."""
 
-    @pytest.fixture
-    def temp_dirs(self):
-        """Create temporary source and target directories for testing."""
-        source_dir = tempfile.mkdtemp(prefix="test_source_")
-        target_dir = tempfile.mkdtemp(prefix="test_target_")
-
-        yield source_dir, target_dir
-
-        # Cleanup
-        shutil.rmtree(source_dir, ignore_errors=True)
-        shutil.rmtree(target_dir, ignore_errors=True)
-
     def test_timing_message_logged(self, tmp_path, caplog):
         """Test that timing message is logged when timing is enabled."""
         # Create real directories
@@ -557,18 +546,6 @@ class TestTiming:
 
 class TestDryRun:
     """Test suite for dry-run functionality."""
-
-    @pytest.fixture
-    def temp_dirs(self):
-        """Create temporary source and target directories for testing."""
-        source_dir = tempfile.mkdtemp(prefix="test_source_")
-        target_dir = tempfile.mkdtemp(prefix="test_target_")
-
-        yield source_dir, target_dir
-
-        # Cleanup
-        shutil.rmtree(source_dir, ignore_errors=True)
-        shutil.rmtree(target_dir, ignore_errors=True)
 
     def test_dry_run_no_changes(self, temp_dirs, caplog):
         """Test that dry-run mode makes no actual changes."""
