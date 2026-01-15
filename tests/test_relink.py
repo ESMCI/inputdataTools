@@ -313,6 +313,36 @@ class TestFindAndReplaceOwnedFiles:
         assert "Created symbolic link:" in caplog.text
         assert f"{source_file} -> {target_file}" in caplog.text
 
+    def test_handles_file_deleted_during_traversal(
+        self, temp_dirs, current_user, caplog
+    ):
+        """Test that FileNotFoundError during stat is handled gracefully."""
+        source_dir, target_dir = temp_dirs
+        username = current_user
+
+        # Create files
+        source_file = os.path.join(source_dir, "disappearing.txt")
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("content")
+
+        # Mock os.stat to raise FileNotFoundError for this specific file
+        original_stat = os.stat
+
+        def mock_stat(path, *args, **kwargs):
+            if path == source_file:
+                raise FileNotFoundError(f"Simulated: {path} deleted during traversal")
+            return original_stat(path, *args, **kwargs)
+
+        with patch("os.stat", side_effect=mock_stat):
+            with caplog.at_level(logging.INFO):
+                # Should not crash, should continue processing
+                relink.find_and_replace_owned_files(source_dir, target_dir, username)
+
+        # Should complete without errors (file was skipped)
+        # No error message should be logged (it's silently skipped via continue)
+        assert "Error" not in caplog.text
+        assert "disappearing.txt" not in caplog.text
+
 
 class TestParseArguments:
     """Test suite for parse_arguments function."""
