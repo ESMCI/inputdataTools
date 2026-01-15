@@ -9,6 +9,7 @@ import sys
 import pwd
 import argparse
 import logging
+import time
 
 DEFAULT_SOURCE_ROOT = "/glade/campaign/cesm/cesmdata/cseg/inputdata/"
 DEFAULT_TARGET_ROOT = (
@@ -185,27 +186,40 @@ def parse_arguments():
         action="store_true",
         help="Show what would be done without making any changes",
     )
+    parser.add_argument(
+        "--timing",
+        action="store_true",
+        help="Measure and display the execution time",
+    )
 
     return parser.parse_args()
 
-
-if __name__ == "__main__":
+def main():
 
     args = parse_arguments()
 
     # Configure logging based on verbosity flags
     if args.quiet:
-        LOG_LEVEL = logging.WARNING
+        log_level = logging.WARNING
     elif args.verbose:
-        LOG_LEVEL = logging.DEBUG
+        log_level = logging.DEBUG
     else:
-        LOG_LEVEL = logging.INFO
+        log_level = logging.INFO
 
-    logging.basicConfig(level=LOG_LEVEL, format="%(message)s", stream=sys.stdout)
+    logging.basicConfig(level=log_level, format="%(message)s", stream=sys.stdout)
 
     my_username = os.environ["USER"]
+
+    start_time = time.time()
 
     # --- Execution ---
     find_and_replace_owned_files(
         args.source_root, args.target_root, my_username, dry_run=args.dry_run
     )
+
+    if args.timing:
+        elapsed_time = time.time() - start_time
+        logger.info("Execution time: %.2f seconds", elapsed_time)
+
+if __name__ == "__main__":
+    main()
