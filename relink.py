@@ -10,11 +10,14 @@ import pwd
 import argparse
 import logging
 
-DEFAULT_SOURCE_ROOT = '/glade/campaign/cesm/cesmdata/cseg/inputdata/'
-DEFAULT_TARGET_ROOT = '/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/'
+DEFAULT_SOURCE_ROOT = "/glade/campaign/cesm/cesmdata/cseg/inputdata/"
+DEFAULT_TARGET_ROOT = (
+    "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/"
+)
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
 
 def find_and_replace_owned_files(source_dir, target_dir, username):
     """
@@ -41,7 +44,7 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
         "Searching for files owned by '%s' (UID: %s) in '%s'...",
         username,
         user_uid,
-        source_dir
+        source_dir,
     )
 
     for dirpath, _, filenames in os.walk(source_dir):
@@ -56,7 +59,7 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
 
                 file_uid = os.stat(file_path).st_uid
             except FileNotFoundError:
-                continue # Skip if file was deleted during traversal
+                continue  # Skip if file was deleted during traversal
 
             if file_uid == user_uid:
                 logger.info("Found owned file: %s", file_path)
@@ -71,7 +74,7 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
                         "Warning: Corresponding file not found in '%s' "
                         "for '%s'. Skipping.",
                         target_dir,
-                        file_path
+                        file_path,
                     )
                     continue
 
@@ -80,7 +83,7 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
 
                 # Remove the original file
                 try:
-                    os.rename(link_name, link_name+".tmp")
+                    os.rename(link_name, link_name + ".tmp")
                     logger.info("Deleted original file: %s", link_name)
                 except OSError as e:
                     logger.error("Error deleting file %s: %s. Skipping.", link_name, e)
@@ -91,11 +94,36 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
                     # Create parent directories for the link if they don't exist
                     os.makedirs(os.path.dirname(link_name), exist_ok=True)
                     os.symlink(link_target, link_name)
-                    os.remove(link_name+".tmp")
-                    logger.info("Created symbolic link: %s -> %s", link_name, link_target)
+                    os.remove(link_name + ".tmp")
+                    logger.info(
+                        "Created symbolic link: %s -> %s", link_name, link_target
+                    )
                 except OSError as e:
-                    os.rename(link_name+".tmp", link_name)
-                    logger.error("Error creating symlink for %s: %s. Skipping.", link_name, e)
+                    os.rename(link_name + ".tmp", link_name)
+                    logger.error(
+                        "Error creating symlink for %s: %s. Skipping.", link_name, e
+                    )
+
+
+def validate_directory(path):
+    """
+    Validate that the path exists and is a directory.
+
+    Args:
+        path (str): The path to validate.
+
+    Returns:
+        str: The absolute path if valid.
+
+    Raises:
+        argparse.ArgumentTypeError: If path doesn't exist or is not a directory.
+    """
+    if not os.path.exists(path):
+        raise argparse.ArgumentTypeError(f"Directory '{path}' does not exist")
+    if not os.path.isdir(path):
+        raise argparse.ArgumentTypeError(f"'{path}' is not a directory")
+    return os.path.abspath(path)
+
 
 def parse_arguments():
     """
@@ -107,41 +135,43 @@ def parse_arguments():
     """
     parser = argparse.ArgumentParser(
         description=(
-            'Find files owned by a user and replace them with symbolic links to a target directory.'
+            "Find files owned by a user and replace them with symbolic links to a target directory."
         )
     )
     parser.add_argument(
-        '--source-root',
+        "--source-root",
+        type=validate_directory,
         default=DEFAULT_SOURCE_ROOT,
         help=(
-            f'The root of the directory tree to search for files (default: {DEFAULT_SOURCE_ROOT})'
-        )
+            f"The root of the directory tree to search for files (default: {DEFAULT_SOURCE_ROOT})"
+        ),
     )
     parser.add_argument(
-        '--target-root',
+        "--target-root",
+        type=validate_directory,
         default=DEFAULT_TARGET_ROOT,
         help=(
-            f'The root of the directory tree where files should be moved to '
-            f'(default: {DEFAULT_TARGET_ROOT})'
-        )
+            f"The root of the directory tree where files should be moved to "
+            f"(default: {DEFAULT_TARGET_ROOT})"
+        ),
     )
 
     # Verbosity options (mutually exclusive)
     verbosity_group = parser.add_mutually_exclusive_group()
     verbosity_group.add_argument(
-        '-v', '--verbose',
-        action='store_true',
-        help='Enable verbose output'
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
     )
     verbosity_group.add_argument(
-        '-q', '--quiet',
-        action='store_true',
-        help='Quiet mode (show only warnings and errors)'
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Quiet mode (show only warnings and errors)",
     )
 
     return parser.parse_args()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
 
     args = parse_arguments()
 
@@ -153,13 +183,9 @@ if __name__ == '__main__':
     else:
         LOG_LEVEL = logging.INFO
 
-    logging.basicConfig(
-        level=LOG_LEVEL,
-        format='%(message)s',
-        stream=sys.stdout
-    )
-    
-    my_username = os.environ['USER']
+    logging.basicConfig(level=LOG_LEVEL, format="%(message)s", stream=sys.stdout)
+
+    my_username = os.environ["USER"]
 
     # --- Execution ---
     find_and_replace_owned_files(args.source_root, args.target_root, my_username)
