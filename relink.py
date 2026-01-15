@@ -192,21 +192,36 @@ def parse_arguments():
         help="Measure and display the execution time",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    process_args(args)
+
+    return args
+
+
+def process_args(args):
+    """
+    Process parsed arguments and set derived attributes.
+
+    Sets the log_level attribute on args based on verbosity flags.
+
+    Args:
+        args (argparse.Namespace): Parsed command-line arguments.
+    """
+    # Configure logging based on verbosity flags
+    if args.quiet:
+        args.log_level = logging.WARNING
+    elif args.verbose:
+        args.log_level = logging.DEBUG
+    else:
+        args.log_level = logging.INFO
+
 
 def main():
 
     args = parse_arguments()
 
-    # Configure logging based on verbosity flags
-    if args.quiet:
-        log_level = logging.WARNING
-    elif args.verbose:
-        log_level = logging.DEBUG
-    else:
-        log_level = logging.INFO
-
-    logging.basicConfig(level=log_level, format="%(message)s", stream=sys.stdout)
+    logging.basicConfig(level=args.log_level, format="%(message)s", stream=sys.stdout)
 
     my_username = os.environ["USER"]
 
@@ -220,6 +235,7 @@ def main():
     if args.timing:
         elapsed_time = time.time() - start_time
         logger.info("Execution time: %.2f seconds", elapsed_time)
+
 
 if __name__ == "__main__":
     main()

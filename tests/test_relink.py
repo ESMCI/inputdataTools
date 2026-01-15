@@ -615,6 +615,7 @@ class TestVerbosityLevels:
                 relink.find_and_replace_owned_files(source_dir, target_dir, username)
             assert "Error creating symlink" in caplog.text
 
+
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
@@ -725,6 +726,7 @@ class TestEdgeCases:
             # Check error message
             assert "Error creating symlink" in caplog.text
             assert source_file in caplog.text
+
 
 class TestTiming:
     """Test suite for timing functionality."""
@@ -989,3 +991,36 @@ class TestCommandLineExecution:
 
         # Verify success messages in output
         assert "Created symbolic link:" in result.stdout
+
+
+class TestProcessArgs:
+    """Test suite for process_args function."""
+
+    # pylint: disable=no-member
+
+    def test_process_args_quiet_sets_warning_level(self):
+        """Test that quiet flag sets log level to WARNING."""
+        args = argparse.Namespace(quiet=True, verbose=False)
+        relink.process_args(args)
+        assert args.log_level == logging.WARNING
+
+    def test_process_args_verbose_sets_debug_level(self):
+        """Test that verbose flag sets log level to DEBUG."""
+        args = argparse.Namespace(quiet=False, verbose=True)
+        relink.process_args(args)
+        assert args.log_level == logging.DEBUG
+
+    def test_process_args_default_sets_info_level(self):
+        """Test that default (no flags) sets log level to INFO."""
+        args = argparse.Namespace(quiet=False, verbose=False)
+        relink.process_args(args)
+        assert args.log_level == logging.INFO
+
+    def test_process_args_modifies_args_in_place(self):
+        """Test that process_args modifies the args object in place."""
+        args = argparse.Namespace(quiet=False, verbose=False)
+        original_args = args
+        relink.process_args(args)
+        # Should be the same object, modified in place
+        assert args is original_args
+        assert hasattr(args, "log_level")
