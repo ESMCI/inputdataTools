@@ -19,7 +19,7 @@ DEFAULT_TARGET_ROOT = (
 logger = logging.getLogger(__name__)
 
 
-def find_and_replace_owned_files(source_dir, target_dir, username):
+def find_and_replace_owned_files(source_dir, target_dir, username, dry_run=False):
     """
     Finds files owned by a specific user in a source directory tree,
     deletes them, and replaces them with symbolic links to the same
@@ -29,6 +29,7 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
         source_dir (str): The root of the directory tree to search for files.
         target_dir (str): The root of the directory tree containing the new files.
         username (str): The name of the user whose files will be processed.
+        dry_run (bool): If True, only show what would be done without making changes.
     """
     source_dir = os.path.abspath(source_dir)
     target_dir = os.path.abspath(target_dir)
@@ -39,6 +40,9 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
     except KeyError:
         logger.error("Error: User '%s' not found. Exiting.", username)
         return
+
+    if dry_run:
+        logger.info("DRY RUN MODE - No changes will be made")
 
     logger.info(
         "Searching for files owned by '%s' (UID: %s) in '%s'...",
@@ -80,6 +84,14 @@ def find_and_replace_owned_files(source_dir, target_dir, username):
 
                 # Get the link name
                 link_name = file_path
+
+                if dry_run:
+                    logger.info(
+                        "[DRY RUN] Would create symbolic link: %s -> %s",
+                        link_name,
+                        link_target,
+                    )
+                    continue
 
                 # Remove the original file
                 try:
@@ -168,6 +180,12 @@ def parse_arguments():
         help="Quiet mode (show only warnings and errors)",
     )
 
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making any changes",
+    )
+
     return parser.parse_args()
 
 
@@ -188,4 +206,6 @@ if __name__ == "__main__":
     my_username = os.environ["USER"]
 
     # --- Execution ---
-    find_and_replace_owned_files(args.source_root, args.target_root, my_username)
+    find_and_replace_owned_files(
+        args.source_root, args.target_root, my_username, dry_run=args.dry_run
+    )

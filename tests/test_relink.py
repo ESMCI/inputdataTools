@@ -451,3 +451,116 @@ class TestParseArguments:
                 relink.parse_arguments()
             # Mutually exclusive arguments cause SystemExit with code 2
             assert exc_info.value.code == 2
+
+    def test_dry_run_flag(self, mock_default_dirs):
+        """Test that --dry-run flag is parsed correctly."""
+        # pylint: disable=unused-argument
+        with patch("sys.argv", ["relink.py", "--dry-run"]):
+            args = relink.parse_arguments()
+            assert args.dry_run is True
+
+    def test_dry_run_default(self, mock_default_dirs):
+        """Test that dry_run defaults to False."""
+        # pylint: disable=unused-argument
+        with patch("sys.argv", ["relink.py"]):
+            args = relink.parse_arguments()
+            assert args.dry_run is False
+
+
+class TestDryRun:
+    """Test suite for dry-run functionality."""
+
+    @pytest.fixture
+    def temp_dirs(self):
+        """Create temporary source and target directories for testing."""
+        source_dir = tempfile.mkdtemp(prefix="test_source_")
+        target_dir = tempfile.mkdtemp(prefix="test_target_")
+
+        yield source_dir, target_dir
+
+        # Cleanup
+        shutil.rmtree(source_dir, ignore_errors=True)
+        shutil.rmtree(target_dir, ignore_errors=True)
+
+    def test_dry_run_no_changes(self, temp_dirs, caplog):
+        """Test that dry-run mode makes no actual changes."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files
+        source_file = os.path.join(source_dir, "test_file.txt")
+        target_file = os.path.join(target_dir, "test_file.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source content")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target content")
+
+        # Get original file info
+        with open(source_file, "r", encoding="utf-8") as f:
+            original_content = f.read()
+        original_is_link = os.path.islink(source_file)
+
+        # Run in dry-run mode
+        with caplog.at_level(logging.INFO):
+            relink.find_and_replace_owned_files(
+                source_dir, target_dir, username, dry_run=True
+            )
+
+        # Verify no changes were made
+        assert os.path.isfile(source_file), "Original file should still exist"
+        assert not os.path.islink(source_file), "File should not be a symlink"
+        with open(source_file, "r", encoding="utf-8") as f:
+            assert f.read() == original_content
+        assert os.path.islink(source_file) == original_is_link
+
+    def test_dry_run_shows_message(self, temp_dirs, caplog):
+        """Test that dry-run mode shows what would be done."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files
+        source_file = os.path.join(source_dir, "test_file.txt")
+        target_file = os.path.join(target_dir, "test_file.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        # Run in dry-run mode
+        with caplog.at_level(logging.INFO):
+            relink.find_and_replace_owned_files(
+                source_dir, target_dir, username, dry_run=True
+            )
+
+        # Check that dry-run messages were logged
+        assert "DRY RUN MODE" in caplog.text
+        assert "[DRY RUN] Would create symbolic link:" in caplog.text
+        assert f"{source_file} -> {target_file}" in caplog.text
+
+    def test_dry_run_no_delete_or_create_messages(self, temp_dirs, caplog):
+        """Test that dry-run doesn't show delete/create messages."""
+        source_dir, target_dir = temp_dirs
+        username = os.environ["USER"]
+
+        # Create files
+        source_file = os.path.join(source_dir, "test_file.txt")
+        target_file = os.path.join(target_dir, "test_file.txt")
+
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write("source")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write("target")
+
+        # Run in dry-run mode
+        with caplog.at_level(logging.INFO):
+            relink.find_and_replace_owned_files(
+                source_dir, target_dir, username, dry_run=True
+            )
+
+        # Verify actual operation messages are NOT logged
+        assert "Deleted original file:" not in caplog.text
+        assert "Created symbolic link:" not in caplog.text
+        # But the dry-run message should be there
+        assert "[DRY RUN] Would create symbolic link: " in caplog.text
