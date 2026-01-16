@@ -233,7 +233,8 @@ def parse_arguments():
         )
     )
     parser.add_argument(
-        "--source-root",
+        "source_root",
+        nargs="?",
         type=validate_directory,
         default=DEFAULT_SOURCE_ROOT,
         help=(

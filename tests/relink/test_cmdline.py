@@ -40,7 +40,6 @@ def test_command_line_execution_dry_run(mock_dirs):
     command = [
         sys.executable,
         relink_script,
-        "--source-root",
         str(source_dir),
         "--target-root",
         str(target_dir),
@@ -76,7 +75,6 @@ def test_command_line_execution_actual_run(mock_dirs):
     command = [
         sys.executable,
         relink_script,
-        "--source-root",
         str(source_dir),
         "--target-root",
         str(target_dir),

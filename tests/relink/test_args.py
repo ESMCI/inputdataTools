@@ -51,7 +51,7 @@ class TestParseArguments:
         _, target_dir = mock_default_dirs
         custom_source = tmp_path / "custom_source"
         custom_source.mkdir()
-        with patch("sys.argv", ["relink.py", "--source-root", str(custom_source)]):
+        with patch("sys.argv", ["relink.py", str(custom_source)]):
             args = relink.parse_arguments()
             assert args.source_root == str(custom_source.resolve())
             assert args.target_root == target_dir
@@ -76,7 +76,6 @@ class TestParseArguments:
             "sys.argv",
             [
                 "relink.py",
-                "--source-root",
                 str(source_path),
                 "--target-root",
                 str(target_path),
