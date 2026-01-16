@@ -88,7 +88,7 @@ def test_skip_existing_symlinks(temp_dirs, current_user, caplog):
     stat_before = os.lstat(source_link)
 
     # Run the function
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         relink.replace_files_with_symlinks(source_dir, target_dir, username)
 
     # Verify the symlink is unchanged (same inode means it wasn't deleted/recreated)
