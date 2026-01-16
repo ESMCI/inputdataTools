@@ -178,6 +178,50 @@ def test_multiple_files(temp_dirs, current_user):
         assert os.readlink(source_file) == target_file
 
 
+def test_multiple_files_nested(temp_dirs, current_user):
+    """Test with multiple files scattered throughout a nested directory tree."""
+    source_dir, target_dir = temp_dirs
+    username = current_user
+
+    # Create nested directory structure with files at different levels
+    test_files = [
+        "root_file1.txt",
+        "root_file2.txt",
+        os.path.join("level1", "file_a.txt"),
+        os.path.join("level1", "file_b.txt"),
+        os.path.join("level1", "subdir", "file_c.txt"),
+        os.path.join("level2", "deep", "nested", "file_d.txt"),
+        os.path.join("level2", "file_e.txt"),
+    ]
+
+    # Create all files and their parent directories
+    for rel_path in test_files:
+        source_file = os.path.join(source_dir, rel_path)
+        target_file = os.path.join(target_dir, rel_path)
+
+        # Create parent directories
+        os.makedirs(os.path.dirname(source_file), exist_ok=True)
+        os.makedirs(os.path.dirname(target_file), exist_ok=True)
+
+        # Create files
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write(f"source content for {rel_path}")
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write(f"target content for {rel_path}")
+
+    # Run the function
+    relink.replace_files_with_symlinks(source_dir, target_dir, username)
+
+    # Verify all files are now symlinks pointing to correct targets
+    for rel_path in test_files:
+        source_file = os.path.join(source_dir, rel_path)
+        target_file = os.path.join(target_dir, rel_path)
+        assert os.path.islink(source_file), f"{source_file} should be a symlink"
+        assert (
+            os.readlink(source_file) == target_file
+        ), f"{source_file} should point to {target_file}"
+
+
 def test_absolute_paths(temp_dirs, current_user):
     """Test that function handles relative paths by converting to absolute."""
     source_dir, target_dir = temp_dirs
