@@ -421,6 +421,14 @@ def process_args(args):
     if hasattr(args, "items_to_process") and not isinstance(args.items_to_process, list):
         args.items_to_process = [args.items_to_process]
 
+    # Check that everything is an absolute path (should have been converted, if needed, during
+    # validate_paths).
+    if hasattr(args, "items_to_process"):
+        for item in args.items_to_process:
+            assert os.path.isabs(item)
+    if hasattr(args, "target_root"):
+        assert os.path.isabs(args.target_root)
+
     # Check that every item in items_to_process is a child of inputdata_root
     if hasattr(args, "items_to_process"):  # Sometimes doesn't if we're testing
         for item in args.items_to_process:

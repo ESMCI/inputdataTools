@@ -371,8 +371,8 @@ class TestProcessArgs:
         args = argparse.Namespace(
             quiet=False,
             verbose=False,
-            items_to_process="abc123",
-            inputdata_root="def456",
+            items_to_process=os.path.abspath("abc123"),
+            inputdata_root=os.path.abspath("def456"),
         )
         with pytest.raises(argparse.ArgumentTypeError) as exc_info:
             relink.process_args(args)
@@ -380,7 +380,7 @@ class TestProcessArgs:
 
     def test_error_if_target_in_inputdata(self):
         """Test that process_args errors if target is in inputdata_root."""
-        inputdata_root = "inputdata"
+        inputdata_root = os.path.abspath("inputdata")
         target_root = os.path.join(inputdata_root, "abc123")
         args = argparse.Namespace(
             quiet=False,
