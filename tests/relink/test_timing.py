@@ -37,10 +37,11 @@ def test_timing_logging(tmp_path, caplog, use_timing, should_log_timing):
     # Build argv with or without --timing flag
     test_argv = [
         "relink.py",
-        "--source-root",
         str(source_dir),
         "--target-root",
         str(target_dir),
+        "--inputdata-root",
+        str(source_dir),
     ]
     if use_timing:
         test_argv.append("--timing")
@@ -75,12 +76,13 @@ def test_timing_shows_in_quiet_mode(tmp_path, caplog):
     # Build argv with both --timing and --quiet flags
     test_argv = [
         "relink.py",
-        "--source-root",
         str(source_dir),
         "--target-root",
         str(target_dir),
         "--timing",
         "--quiet",
+        "--inputdata-root",
+        str(source_dir),
     ]
 
     with patch("sys.argv", test_argv):

@@ -5,6 +5,7 @@ Tests for relink.py --dry-run option.
 import os
 import sys
 import logging
+from unittest.mock import patch
 
 import pytest
 
@@ -46,7 +47,7 @@ def test_dry_run_no_changes(dry_run_setup, caplog):
     # Run in dry-run mode
     with caplog.at_level(logging.INFO):
         relink.replace_files_with_symlinks(
-            source_dir, target_dir, username, dry_run=True
+            source_dir, target_dir, username, inputdata_root=source_dir, dry_run=True
         )
 
     # Verify no changes were made
@@ -64,7 +65,7 @@ def test_dry_run_shows_message(dry_run_setup, caplog):
     # Run in dry-run mode
     with caplog.at_level(logging.INFO):
         relink.replace_files_with_symlinks(
-            source_dir, target_dir, username, dry_run=True
+            source_dir, target_dir, username, inputdata_root=source_dir, dry_run=True
         )
 
     # Check that dry-run messages were logged
@@ -80,7 +81,7 @@ def test_dry_run_no_delete_or_create_messages(dry_run_setup, caplog):
     # Run in dry-run mode
     with caplog.at_level(logging.INFO):
         relink.replace_files_with_symlinks(
-            source_dir, target_dir, username, dry_run=True
+            source_dir, target_dir, username, inputdata_root=source_dir, dry_run=True
         )
 
     # Verify actual operation messages are NOT logged
