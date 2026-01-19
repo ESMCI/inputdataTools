@@ -180,12 +180,12 @@ def replace_files_with_symlinks(
 
     # Use efficient scandir-based search
     for file_path in find_owned_files_scandir(source_dir, user_uid, inputdata_root):
-        replace_one_file_with_symlink(source_dir, target_dir, file_path, dry_run=dry_run)
+        replace_one_file_with_symlink(
+            source_dir, target_dir, file_path, dry_run=dry_run
+        )
 
 
-def replace_one_file_with_symlink(
-    source_dir, target_dir, file_path, dry_run=False
-):
+def replace_one_file_with_symlink(source_dir, target_dir, file_path, dry_run=False):
     """
     Given a file, replaces it with a symbolic link to the same relative path in a target directory
     tree.
@@ -355,6 +355,26 @@ def process_args(args):
         args.log_level = logging.DEBUG
     else:
         args.log_level = logging.INFO
+
+    # Ensure that source_root is a list
+    if hasattr(args, "source_root") and not isinstance(args.source_root, list):
+        args.source_root = [args.source_root]
+
+    # Check that every item in source_root is a child of inputdata_root
+    if hasattr(args, "source_root"):  # Sometimes doesn't if we're testing
+        for item in args.source_root:
+            if not Path(item).is_relative_to(args.inputdata_root):
+                raise argparse.ArgumentTypeError(
+                    f"Item '{item}' not under inputdata root '{args.inputdata_root}'"
+                )
+
+    # Check that target_root is NOT a child of inputdata_root
+    if hasattr(args, "target_root"):  # Sometimes doesn't if we're testing
+        if Path(args.target_root).is_relative_to(args.inputdata_root):
+            raise argparse.ArgumentTypeError(
+                f"Target root ('{args.target_root}') must not be under inputdata root "
+                f"'{args.inputdata_root}'"
+            )
 
 
 def main():

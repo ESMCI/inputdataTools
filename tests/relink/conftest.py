@@ -17,7 +17,8 @@ def fixture_temp_dirs():
     target_dir = tempfile.mkdtemp(prefix="test_target_")
 
     with patch("relink.DEFAULT_SOURCE_ROOT", source_dir):
-        yield source_dir, target_dir
+        with patch("relink.DEFAULT_TARGET_ROOT", target_dir):
+            yield source_dir, target_dir
 
     # Cleanup
     shutil.rmtree(source_dir, ignore_errors=True)

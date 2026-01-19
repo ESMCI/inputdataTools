@@ -5,6 +5,7 @@ Tests for relink.py script as called from command line
 import os
 import sys
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -98,15 +99,15 @@ def test_command_line_execution_actual_run(mock_dirs):
     assert "Created symbolic link:" in result.stdout
 
 
-def test_command_line_multiple_source_dirs(tmp_path):
+def test_command_line_multiple_source_dirs(temp_dirs):
     """Test executing relink.py with multiple source directories."""
+    inputdata_dir, target_dir = temp_dirs
     # Create multiple source directories
-    source1 = tmp_path / "source1"
-    source2 = tmp_path / "source2"
-    target_dir = tmp_path / "target"
+    source1 = Path(os.path.join(inputdata_dir, "source1"))
+    source2 = Path(os.path.join(inputdata_dir, "source2"))
     source1.mkdir()
     source2.mkdir()
-    target_dir.mkdir()
+    target_dir = Path(target_dir)
 
     # Create files in each source directory
     source1_file = source1 / "file1.txt"
@@ -134,7 +135,7 @@ def test_command_line_multiple_source_dirs(tmp_path):
         "--target-root",
         str(target_dir),
         "--inputdata-root",
-        str(tmp_path),
+        str(inputdata_dir),
     ]
 
     # Execute the command
