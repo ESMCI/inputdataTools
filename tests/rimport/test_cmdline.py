@@ -249,7 +249,7 @@ class TestRimportCommandLine:
         assert result.returncode == 2
         assert "no filenames found" in result.stderr
 
-    @pytest.mark.parametrize("help_flag", ["-help", "-h"])
+    @pytest.mark.parametrize("help_flag", ["-help", "-h", "--help"])
     def test_help_flag_shows_help(self, rimport_script, help_flag):
         """Test that help flags show help message."""
         command = [sys.executable, rimport_script, help_flag]
@@ -263,8 +263,8 @@ class TestRimportCommandLine:
 
         # Help should exit with code 0
         assert result.returncode == 0
-        assert "SYNOPSIS" in result.stdout
-        assert "OPTIONS" in result.stdout
+        assert "usage:" in result.stdout
+        assert "options:" in result.stdout
 
     def test_list_with_comments_and_blanks(self, rimport_script, test_env, rimport_env):
         """Test that list file with comments and blank lines works correctly."""

@@ -2,26 +2,9 @@
 # TODO: Move all the Python into new file rimport.py for simpler testing. Keep rimport as a
 # convenience wrapper.
 """
-A drop-in CLI replacement for the legacy `rimport` csh tool.
+Copy files from CESM inputdata directory to a publishing directory.
 
-This script preserves the original command-line interface:
-
-  SYNOPSIS
-      rimport  [-file filename] [-list filelist] [-inputdata inputdata_dir] [-help]
-
-  OPTIONS
-      -file filename
-         provide a single filename relative to the top inputdata directory
-      -list filelist
-         provide a file that contains a list of filenames to import. all filenames
-         in the list are relative to the top inputdata area.
-      -inputdata inputdata_dir
-         change the default local top level inputdata directory
-      -help
-         get help about this tool
-
-Customize the `do_new_action(path)` function to implement the new behavior.
-By default, it prints which files would be processed.
+Do `rimport --help` for more information.
 """
 from __future__ import annotations
 
@@ -34,43 +17,27 @@ from pathlib import Path
 from typing import Iterable, List
 
 
-class PlainHelpFormatter(argparse.RawTextHelpFormatter):
-    pass
-
-
 def build_parser() -> argparse.ArgumentParser:
-    synopsis = (
-        "rimport  [-file filename] [-list filelist] [-inputdata inputdata_dir] [-help]"
-    )
-
-    description = (
-        "SYNOPSIS\n"
-        f"      {synopsis}\n\n"
-        "OPTIONS\n"
-        "      -file filename\n"
-        "         provide a single filename relative to the top inputdata directory\n"
-        "      -list filelist\n"
-        "         provide a file that contains a list of filenames to import. all filenames\n"
-        "         in the list are relative to the top inputdata area.\n"
-        "      -inputdata inputdata_dir\n"
-        "         change the default local top level inputdata directory\n"
-        "      -help\n"
-        "         get help about this tool\n"
-    )
-
     parser = argparse.ArgumentParser(
-        prog="rimport",
-        description=description,
-        formatter_class=PlainHelpFormatter,
-        add_help=False,  # preserve original -help only
-        usage=synopsis,
+        description="Copy files from CESM inputdata directory to a publishing directory."
     )
 
     # Mutually exclusive: -file or -list (one required)
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-file", dest="file", metavar="filename", help=argparse.SUPPRESS)
     group.add_argument(
-        "-list", dest="filelist", metavar="filelist", help=argparse.SUPPRESS
+        "-file",
+        dest="file",
+        metavar="filename",
+        help="Provide a single filename relative to the top inputdata directory",
+    )
+    group.add_argument(
+        "-list",
+        dest="filelist",
+        metavar="filelist",
+        help=(
+            "Provide a file that contains a list of filenames to import. All filenames in the list"
+            "are relative to the top inputdata area."
+        ),
     )
 
     parser.add_argument(
@@ -80,11 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.path.join(
             "/glade", "campaign", "cesm", "cesmdata", "cseg", "inputdata"
         ),
-        help=argparse.SUPPRESS,
+        help="Change the default local top level inputdata directory.",
     )
-
-    # Provide -help to mirror legacy behavior
-    parser.add_argument("-help", action="help", help=argparse.SUPPRESS)
 
     return parser
 

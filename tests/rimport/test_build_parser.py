@@ -32,11 +32,6 @@ class TestBuildParser:
         parser = rimport.build_parser()
         assert isinstance(parser, argparse.ArgumentParser)
 
-    def test_parser_prog_name(self):
-        """Test that parser has correct program name."""
-        parser = rimport.build_parser()
-        assert parser.prog == "rimport"
-
     def test_file_argument_accepted(self):
         """Test that -file argument is accepted."""
         parser = rimport.build_parser()
@@ -71,7 +66,7 @@ class TestBuildParser:
         # Check that the error message explains the problem
         captured = capsys.readouterr()
         stderr_lines = captured.err.strip().split("\n")
-        assert "rimport: error: one of the arguments" in stderr_lines[-1]
+        assert "error: one of the arguments" in stderr_lines[-1]
 
     def test_inputdata_default(self):
         """Test that -inputdata has correct default value."""
@@ -89,9 +84,9 @@ class TestBuildParser:
         args = parser.parse_args(["-file", "test.txt", "-inputdata", custom_path])
         assert args.inputdata == custom_path
 
-    @pytest.mark.parametrize("help_flag", ["-help", "-h"])
+    @pytest.mark.parametrize("help_flag", ["-help", "-h", "--help"])
     def test_help_flags_show_help(self, help_flag):
-        """Test that -help and -h flags trigger help."""
+        """Test that all help flag options trigger help."""
         parser = rimport.build_parser()
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args([help_flag])
