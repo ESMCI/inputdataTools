@@ -103,9 +103,7 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
     try:
         rel = src.resolve().relative_to(inputdata_root.resolve())
     except ValueError:
-        # TODO: Do not hard-code string here
-        # TODO: Check whether it's IN THE DIRECTORY, not whether the path contains a string
-        if "d651077" in str(src):
+        if src.resolve().is_relative_to(staging_root.resolve()):
             raise RuntimeError(
                 f"Source file '{src.name}' is already under staging directory '{staging_root}'."
             )

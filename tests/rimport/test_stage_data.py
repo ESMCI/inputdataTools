@@ -119,13 +119,28 @@ class TestStageData:
         with pytest.raises(RuntimeError, match="not under inputdata root"):
             rimport.stage_data(src, inputdata_root, staging_root)
 
+    def test_raises_error_for_file_outside_inputdata_root_with_special_str(
+        self, tmp_path, inputdata_root, staging_root
+    ):
+        """
+        Test that staging a file outside inputdata root raises RuntimeError, even if a certain
+        special string is included in its path.
+        """
+        # Create a file outside inputdata root
+        src = tmp_path / "outside" / "file_d651077.nc"
+        src.parent.mkdir()
+        src.write_text("data")
+
+        # Should raise RuntimeError
+        with pytest.raises(RuntimeError, match="not under inputdata root"):
+            rimport.stage_data(src, inputdata_root, staging_root)
+
     def test_raises_error_for_already_published_file(
         self, tmp_path, inputdata_root, staging_root
     ):
         """Test that staging an already published file raises RuntimeError."""
-        # Create a file with "d651077" in the path (published indicator)
-        src = tmp_path / "d651077" / "data" / "file.nc"
-        src.parent.mkdir(parents=True)
+        # Create a file in staging_root
+        src = staging_root / "file.nc"
         src.write_text("data")
 
         # Should raise RuntimeError for already published file
