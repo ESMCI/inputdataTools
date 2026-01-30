@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Iterable, List
 
+DEFAULT_SOURCE_ROOT = Path("/glade/campaign/cesm/cesmdata/cseg/inputdata")
 DEFAULT_STAGING_ROOT = Path(
     "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata"
 )
@@ -49,11 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
         "-inputdata",
         dest="inputdata",
         metavar="inputdata_dir",
-        # TODO: This should be a module-level variable
-        default=os.path.join(
-            "/glade", "campaign", "cesm", "cesmdata", "cseg", "inputdata"
+        default=DEFAULT_SOURCE_ROOT,
+        help=(
+            "Change the default local top level inputdata directory."
+            f" Default: '{DEFAULT_SOURCE_ROOT}'"
         ),
-        help="Change the default local top level inputdata directory.",
     )
 
     return parser

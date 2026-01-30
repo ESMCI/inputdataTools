@@ -72,10 +72,7 @@ class TestBuildParser:
         """Test that -inputdata has correct default value."""
         parser = rimport.build_parser()
         args = parser.parse_args(["-file", "test.txt"])
-        expected_default = os.path.join(
-            "/glade", "campaign", "cesm", "cesmdata", "cseg", "inputdata"
-        )
-        assert args.inputdata == expected_default
+        assert args.inputdata == rimport.DEFAULT_SOURCE_ROOT
 
     def test_inputdata_custom(self):
         """Test that -inputdata can be customized."""
