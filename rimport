@@ -180,8 +180,10 @@ def main(argv: List[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Ensure we are running as the cesmdata account before touching the tree
-    # Comment out the next line if you prefer to run `sudox -u cesmdata rimport …` explicitly.
-    ensure_running_as("cesmdata", sys.argv)
+    # Set env var RIMPORT_SKIP_USER_CHECK=1 if you prefer to run `sudox -u cesmdata rimport …`
+    # explicitly (or for testing).
+    if os.getenv("RIMPORT_SKIP_USER_CHECK") != "1":
+        ensure_running_as("cesmdata", sys.argv)
 
     root = Path(args.inputdata).expanduser().resolve()
     if not root.exists():
