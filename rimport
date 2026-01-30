@@ -94,6 +94,7 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
     * Raise if `src` is a broken symlink or is outside the inputdata root.
     """
     if src.is_symlink() and src.exists():
+        # TODO: This should be a regular message, not an error.
         raise RuntimeError("File is already published.")
     if src.is_symlink() and not src.exists():
         raise RuntimeError(f"Source is a broken symlink: {src}")
@@ -121,23 +122,23 @@ def ensure_running_as(target_user: str, argv: list[str]) -> None:
     """If not running as `target_user`, re-exec via sudo -u target_user (handles 2FA via PAM)."""
     try:
         target_uid = pwd.getpwnam(target_user).pw_uid
-    except KeyError:
-        # TODO: Raise Python error instead of SystemExit
+    except KeyError as exc:
         print(
             f"rimport: target user '{target_user}' not found on this system",
             file=sys.stderr,
         )
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
     if os.geteuid() != target_uid:
-        if not sys.stdin.isatty():
+        try:
+            assert sys.stdin.isatty()
+        except AssertionError as exc:
             print(
                 f"rimport: need interactive TTY to authenticate as '{target_user}' (2FA).\n"
                 f"         Try: sudo -u {target_user} rimport …",
                 file=sys.stderr,
             )
-            # TODO: Raise Python error instead of SystemExit
-            raise SystemExit(2)
+            raise SystemExit(2) from exc
         # Re-exec under target user; this invokes sudo’s normal password/2FA flow.
         os.execvp("sudo", ["sudo", "-u", target_user, "--"] + argv)
 
