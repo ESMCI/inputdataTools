@@ -143,17 +143,6 @@ def ensure_running_as(target_user: str, argv: list[str]) -> None:
         os.execvp("sudo", ["sudo", "-u", target_user, "--"] + argv)
 
 
-# TODO: Unused; delete.
-def safe_mvandlink(src: Path, dst: Path) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    # Move (handles cross-filesystem with copy2+remove under the hood)
-    # This preserves metadata similarly to copy2 when crossing devices.
-    moved_to = Path(shutil.move(str(src), str(final_dst)))
-    # Create the symlink at the original src path
-    link_target = str(moved_to)
-    os.symlink(link_target, src)
-
-
 def get_staging_root() -> Path:
     """Return the staging root. Uses $RIMPORT_STAGING if set, otherwise
     creates a sibling directory named '<inputdata_root>.staging'."""
