@@ -52,21 +52,20 @@ def find_owned_files_scandir(directory, user_uid):
         with os.scandir(directory) as entries:
             for entry in entries:
                 try:
-                    # Check if it's a file (not following symlinks)
-                    if entry.is_file(follow_symlinks=False):
-                        # Get stat info (cached by scandir, very efficient)
-                        stat_info = entry.stat(follow_symlinks=False)
-
-                        if stat_info.st_uid == user_uid:
-                            yield entry.path
-
                     # Recursively process directories (not following symlinks)
-                    elif entry.is_dir(follow_symlinks=False):
+                    if entry.is_dir(follow_symlinks=False):
                         yield from find_owned_files_scandir(entry.path, user_uid)
 
-                    # Skip symlinks
-                    elif entry.is_symlink():
-                        logger.info("Skipping symlink: %s", entry.path)
+                    # Is this owned by the user?
+                    elif entry.stat(follow_symlinks=False).st_uid == user_uid:
+
+                        # Return if it's a file (not following symlinks)
+                        if entry.is_file(follow_symlinks=False):
+                            yield entry.path
+
+                        # Skip symlinks
+                        elif entry.is_symlink():
+                            logger.debug("Skipping symlink: %s", entry.path)
 
                 except (OSError, PermissionError) as e:
                     logger.debug("Error accessing %s: %s. Skipping.", entry.path, e)
