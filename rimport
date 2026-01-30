@@ -16,6 +16,10 @@ import sys
 from pathlib import Path
 from typing import Iterable, List
 
+DEFAULT_STAGING_ROOT = Path(
+    "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata"
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -155,8 +159,7 @@ def get_staging_root() -> Path:
     env = os.getenv("RIMPORT_STAGING")
     if env:
         return Path(env).expanduser().resolve()
-    # TODO: This should be a module-level variable.
-    return Path("/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata")
+    return DEFAULT_STAGING_ROOT
 
 
 def main(argv: List[str] | None = None) -> int:

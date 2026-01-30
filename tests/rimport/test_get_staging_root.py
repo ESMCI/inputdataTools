@@ -55,10 +55,7 @@ class TestGetStagingRoot:
 
             result = rimport.get_staging_root()
 
-            expected = Path(
-                "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata"
-            )
-            assert result == expected
+            assert result == rimport.DEFAULT_STAGING_ROOT
 
     def test_returns_env_value_when_set(self, tmp_path):
         """Test that RIMPORT_STAGING environment variable is used when set."""
@@ -108,8 +105,5 @@ class TestGetStagingRoot:
             result = rimport.get_staging_root()
 
             # Should NOT be the default
-            default = Path(
-                "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata"
-            )
-            assert result != default
+            assert result != rimport.DEFAULT_STAGING_ROOT
             assert result == custom_staging.resolve()
