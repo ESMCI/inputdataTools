@@ -129,7 +129,7 @@ class TestStageData:
         src.write_text("data")
 
         # Should raise RuntimeError for already published file
-        with pytest.raises(RuntimeError, match="already published"):
+        with pytest.raises(RuntimeError, match="already under staging directory"):
             rimport.stage_data(src, inputdata_root, staging_root)
 
     def test_preserves_file_metadata(self, inputdata_root, staging_root):

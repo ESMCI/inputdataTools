@@ -106,7 +106,9 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
         # TODO: Do not hard-code string here
         # TODO: Check whether it's IN THE DIRECTORY, not whether the path contains a string
         if "d651077" in str(src):
-            raise RuntimeError(f"Source file {src.name} is already published.")
+            raise RuntimeError(
+                f"Source file '{src.name}' is already under staging directory '{staging_root}'."
+            )
         else:
             raise RuntimeError(
                 f"source not under inputdata root: {src} not in {inputdata_root}"
