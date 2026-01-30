@@ -1,4 +1,6 @@
 #!/glade/u/apps/derecho/24.12/opt/view/bin/python
+# TODO: Move all the Python into new file rimport.py for simpler testing. Keep rimport as a
+# convenience wrapper.
 """
 A drop-in CLI replacement for the legacy `rimport` csh tool.
 
@@ -77,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
 
-    # Provide -help to mirror legacy behavior (no -h)
+    # Provide -help to mirror legacy behavior
     parser.add_argument("-help", action="help", help=argparse.SUPPRESS)
 
     return parser
@@ -122,6 +124,8 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
     try:
         rel = src.resolve().relative_to(inputdata_root.resolve())
     except ValueError:
+        # TODO: Do not hard-code string here
+        # TODO: Check whether it's IN THE DIRECTORY, not whether the path contains a string
         if "d651077" in str(src):
             raise RuntimeError(f"Source file {src.name} is already published.")
         else:
@@ -137,17 +141,21 @@ def ensure_running_as(target_user: str, argv: list[str]) -> None:
     try:
         target_uid = pwd.getpwnam(target_user).pw_uid
     except KeyError:
+        # TODO: Raise Python error instead of SystemExit
         print(f"rimport: target user '{target_user}' not found on this system", file=sys.stderr)
         raise SystemExit(2)
 
     if os.geteuid() != target_uid:
         if not sys.stdin.isatty():
+            # TODO: Do not hard-code "cesmdata" here
             print("rimport: need interactive TTY to authenticate as 'cesmdata' (2FA).\n"
                   "         Try: sudo -u cesmdata rimport …", file=sys.stderr)
+            # TODO: Raise Python error instead of SystemExit
             raise SystemExit(2)
         # Re-exec under target user; this invokes sudo’s normal password/2FA flow.
         os.execvp("sudo", ["sudo", "-u", target_user, "--"] + argv)
 
+# TODO: Unused; delete.
 def safe_mvandlink(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     # Move (handles cross-filesystem with copy2+remove under the hood)
@@ -163,6 +171,7 @@ def get_staging_root() -> Path:
     env = os.getenv("RIMPORT_STAGING")
     if env:
         return Path(env).expanduser().resolve()
+    # TODO: This should be a module-level variable.
     return Path("/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata")
 
     
@@ -171,8 +180,10 @@ def main(argv: List[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Ensure we are running as the cesmdata account before touching the tree
-    # Comment out the next line if you prefer to run `sudox -u cesmdata rimport …` explicitly.
-    ensure_running_as("cesmdata", sys.argv)
+    # Set env var RIMPORT_SKIP_USER_CHECK=1 if you prefer to run `sudox -u cesmdata rimport …`
+    # explicitly (or for testing).
+    if os.getenv("RIMPORT_SKIP_USER_CHECK") != "1":
+        ensure_running_as("cesmdata", sys.argv)
 
     root = Path(args.inputdata).expanduser().resolve()
     if not root.exists():
