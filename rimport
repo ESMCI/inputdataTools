@@ -19,6 +19,7 @@ from typing import Iterable, List
 DEFAULT_STAGING_ROOT = Path(
     "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata"
 )
+STAGE_OWNER = "cesmdata"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-inputdata",
         dest="inputdata",
         metavar="inputdata_dir",
+        # TODO: This should be a module-level variable
         default=os.path.join(
             "/glade", "campaign", "cesm", "cesmdata", "cseg", "inputdata"
         ),
@@ -130,10 +132,9 @@ def ensure_running_as(target_user: str, argv: list[str]) -> None:
 
     if os.geteuid() != target_uid:
         if not sys.stdin.isatty():
-            # TODO: Do not hard-code "cesmdata" here
             print(
-                "rimport: need interactive TTY to authenticate as 'cesmdata' (2FA).\n"
-                "         Try: sudo -u cesmdata rimport …",
+                f"rimport: need interactive TTY to authenticate as '{target_user}' (2FA).\n"
+                f"         Try: sudo -u {target_user} rimport …",
                 file=sys.stderr,
             )
             # TODO: Raise Python error instead of SystemExit
@@ -166,11 +167,11 @@ def main(argv: List[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Ensure we are running as the cesmdata account before touching the tree
-    # Set env var RIMPORT_SKIP_USER_CHECK=1 if you prefer to run `sudox -u cesmdata rimport …`
+    # Ensure we are running as the STAGE_OWNER account before touching the tree
+    # Set env var RIMPORT_SKIP_USER_CHECK=1 if you prefer to run `sudox -u STAGE_OWNER rimport …`
     # explicitly (or for testing).
     if os.getenv("RIMPORT_SKIP_USER_CHECK") != "1":
-        ensure_running_as("cesmdata", sys.argv)
+        ensure_running_as(STAGE_OWNER, sys.argv)
 
     root = Path(args.inputdata).expanduser().resolve()
     if not root.exists():
