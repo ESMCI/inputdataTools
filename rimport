@@ -16,10 +16,10 @@ import sys
 from pathlib import Path
 from typing import Iterable, List
 
-DEFAULT_INPUTDATA_ROOT = Path("/glade/campaign/cesm/cesmdata/cseg/inputdata")
-DEFAULT_STAGING_ROOT = Path(
-    "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata"
-)
+import shared
+
+DEFAULT_INPUTDATA_ROOT = Path(shared.DEFAULT_INPUTDATA_ROOT)
+DEFAULT_STAGING_ROOT = Path(shared.DEFAULT_STAGING_ROOT)
 STAGE_OWNER = "cesmdata"
 
 

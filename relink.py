@@ -12,10 +12,7 @@ import logging
 import time
 from pathlib import Path
 
-DEFAULT_INPUTDATA_ROOT = "/glade/campaign/cesm/cesmdata/cseg/inputdata/"
-DEFAULT_STAGING_ROOT = (
-    "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/"
-)
+from shared import DEFAULT_INPUTDATA_ROOT, DEFAULT_STAGING_ROOT
 
 # Set up logger
 logger = logging.getLogger(__name__)
