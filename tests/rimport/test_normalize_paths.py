@@ -1,5 +1,5 @@
 """
-Tests for resolve_paths() function in rimport script.
+Tests for normalize_paths() function in rimport script.
 """
 
 import os
@@ -33,11 +33,11 @@ def fixture_root(tmp_path):
 
 
 class TestResolvePaths:
-    """Test suite for resolve_paths() function."""
+    """Test suite for normalize_paths() function."""
 
     def test_single_relative_path(self, root):
         """Test resolving a single relative path."""
-        result = rimport.resolve_paths(root, ["file1.nc"])
+        result = rimport.normalize_paths(root, ["file1.nc"])
 
         assert len(result) == 1
         assert result[0] == (root / "file1.nc").resolve()
@@ -45,7 +45,7 @@ class TestResolvePaths:
     def test_multiple_relative_paths(self, root):
         """Test resolving multiple relative paths."""
         relnames = ["file1.nc", "file2.nc", "file3.nc"]
-        result = rimport.resolve_paths(root, relnames)
+        result = rimport.normalize_paths(root, relnames)
 
         assert len(result) == 3
         assert result[0] == (root / "file1.nc").resolve()
@@ -55,7 +55,7 @@ class TestResolvePaths:
     def test_nested_relative_paths(self, root):
         """Test resolving nested relative paths."""
         relnames = ["dir1/file1.nc", "dir2/subdir/file2.nc"]
-        result = rimport.resolve_paths(root, relnames)
+        result = rimport.normalize_paths(root, relnames)
 
         assert len(result) == 2
         assert result[0] == (root / "dir1" / "file1.nc").resolve()
@@ -66,7 +66,7 @@ class TestResolvePaths:
         abs_path = tmp_path / "other" / "file.nc"
         relnames = [str(abs_path)]
 
-        result = rimport.resolve_paths(root, relnames)
+        result = rimport.normalize_paths(root, relnames)
 
         assert len(result) == 1
         assert result[0] == abs_path.resolve()
@@ -76,7 +76,7 @@ class TestResolvePaths:
         abs_path = tmp_path / "other" / "file.nc"
         relnames = ["file1.nc", str(abs_path), "dir/file2.nc"]
 
-        result = rimport.resolve_paths(root, relnames)
+        result = rimport.normalize_paths(root, relnames)
 
         assert len(result) == 3
         assert result[0] == (root / "file1.nc").resolve()
@@ -85,7 +85,7 @@ class TestResolvePaths:
 
     def test_empty_list(self, root):
         """Test with empty list of names."""
-        result = rimport.resolve_paths(root, [])
+        result = rimport.normalize_paths(root, [])
 
         assert len(result) == 0
         assert result == []
@@ -93,7 +93,7 @@ class TestResolvePaths:
     def test_paths_with_spaces(self, root):
         """Test paths with spaces in names."""
         relnames = ["file with spaces.nc", "dir with spaces/file.nc"]
-        result = rimport.resolve_paths(root, relnames)
+        result = rimport.normalize_paths(root, relnames)
 
         assert len(result) == 2
         assert result[0] == (root / "file with spaces.nc").resolve()
@@ -102,7 +102,7 @@ class TestResolvePaths:
     def test_paths_with_special_characters(self, root):
         """Test paths with special characters."""
         relnames = ["file-name_123.nc", "dir@test/file.nc"]
-        result = rimport.resolve_paths(root, relnames)
+        result = rimport.normalize_paths(root, relnames)
 
         assert len(result) == 2
         assert result[0] == (root / "file-name_123.nc").resolve()
@@ -110,7 +110,7 @@ class TestResolvePaths:
 
     def test_returns_path_objects(self, root):
         """Test that result contains Path objects."""
-        result = rimport.resolve_paths(root, ["file.nc"])
+        result = rimport.normalize_paths(root, ["file.nc"])
 
         assert len(result) == 1
         assert isinstance(result[0], Path)
@@ -118,9 +118,20 @@ class TestResolvePaths:
     def test_resolves_dot_and_dotdot(self, root):
         """Test that . and .. are resolved."""
         relnames = ["./file1.nc", "dir/../file2.nc", "dir/./file3.nc"]
-        result = rimport.resolve_paths(root, relnames)
+        result = rimport.normalize_paths(root, relnames)
 
         assert len(result) == 3
         assert result[0] == (root / "file1.nc").resolve()
         assert result[1] == (root / "file2.nc").resolve()
         assert result[2] == (root / "dir" / "file3.nc").resolve()
+
+    def test_abs_symlink_unchanged(self, root):
+        """Test that an absolute path to a symlink is unchanged"""
+        # Create a real file in staging and a symlink to it in inputdata
+        real_file = root / "real_file.nc"
+        real_file.write_text("data")
+        symlink = root / "link.nc"
+        symlink.symlink_to(real_file)
+
+        result = rimport.normalize_paths(root, [symlink])
+        assert result[0] == symlink

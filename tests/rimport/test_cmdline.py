@@ -307,3 +307,130 @@ class TestRimportCommandLine:
         # Verify both files were staged
         assert (staging_root / "file1.nc").exists()
         assert (staging_root / "file2.nc").exists()
+
+    def test_prints_and_exits_for_already_published_linked_file(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """
+        Test that stage_data returns early with msg if file already published/linked. Note that the
+        only thing this test does that the stage_data tests don't is to check that main() correctly
+        passes the unresolved symlink to normalize_paths.
+        """
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        # Create a real file in staging and a symlink to it in inputdata
+        real_file = staging_root / "real_file.nc"
+        real_file.write_text("data")
+        src = inputdata_root / "link.nc"
+        src.symlink_to(real_file)
+
+        # Run rimport with -file option
+        command = [
+            sys.executable,
+            rimport_script,
+            "-file",
+            "link.nc",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify success
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Verify the right message was printed
+        msg = "File is already published and linked"
+        assert msg in result.stdout
+
+        # Verify the WRONG message was NOT printed
+        msg = "is already under staging directory"
+        assert msg not in result.stdout
+
+    def test_error_broken_symlink(self, rimport_script, test_env, rimport_env):
+        """
+        Test that stage_data errors with msg if file is a link w/ nonexistent target. Note that the
+        only thing this test does that the stage_data tests don't is to check that main() correctly
+        passes the unresolved symlink to stage_data.
+        """
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        # Create a symlink in inputdata pointing to a nonexistent file
+        real_file = staging_root / "real_file.nc"
+        src = inputdata_root / "link.nc"
+        src.symlink_to(real_file)
+
+        # Run rimport
+        command = [
+            sys.executable,
+            rimport_script,
+            "-file",
+            "link.nc",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify failure
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
+
+        # Verify the right message was printed
+        msg = "Source is a broken symlink"
+        assert msg in result.stderr
+
+    def test_error_symlink_pointing_outside_staging(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """
+        Test that stage_data errors w/ msg if file is link w/ target outside staging. Note that the
+        only thing this test does that the stage_data tests don't is to check that main() correctly
+        passes the unresolved symlink to stage_data.
+        """
+        inputdata_root = test_env["inputdata_root"]
+        tmp_path = test_env["tmp_path"]
+
+        # Create a real file outside staging and a symlink to it in inputdata
+        real_file = tmp_path / "real_file.nc"
+        real_file.write_text("data")
+        src = inputdata_root / "link.nc"
+        src.symlink_to(real_file)
+
+        # Run rimport
+        command = [
+            sys.executable,
+            rimport_script,
+            "-file",
+            "link.nc",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify failure
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
+
+        # Verify the right message was printed
+        msg = "is outside staging directory"
+        assert msg in result.stderr

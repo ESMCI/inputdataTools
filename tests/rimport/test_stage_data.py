@@ -90,9 +90,14 @@ class TestStageData:
             # Should print message for live symlink and return early
             rimport.stage_data(src, inputdata_root, staging_root)
 
-            # Verify the message was printed
+            # Verify the right message was printed
+            stdout = capsys.readouterr().out.strip()
             msg = "File is already published and linked"
-            assert msg in capsys.readouterr().out.strip()
+            assert msg in stdout
+
+            # Verify the WRONG message was NOT printed
+            msg = "is already under staging directory"
+            assert msg not in stdout
 
             # Verify that shutil.copy2 was never called (function returned early)
             mock_copy.assert_not_called()

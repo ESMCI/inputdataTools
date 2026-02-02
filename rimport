@@ -109,28 +109,26 @@ def read_filelist(list_path: Path) -> List[str]:
     return lines
 
 
-def resolve_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
-    """Convert relative or absolute path names to resolved absolute Paths.
+def normalize_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
+    """Convert relative or absolute path names to normalized absolute Paths.
 
     For each name in relnames:
-    - If the name is relative, it is resolved relative to `root`
-    - If the name is already absolute, it is resolved as-is
-    All paths are resolved to their canonical absolute form.
+    - If the name is relative, it is assumed to be relative to `root` and made absolute
+    All paths are then normalized to their absolute form, replacing . and .. as needed.
+
+    Note that symlinks are NOT resolved.
 
     Args:
-        root: Base directory for resolving relative paths.
-        relnames: Iterable of path names (relative or absolute) to resolve.
+        root: Base directory under which relative paths are assumed to be.
+        relnames: Iterable of path names (relative or absolute) to normalize.
 
     Returns:
-        List of resolved absolute Path objects.
+        List of normalized absolute Path objects.
     """
     paths: List[Path] = []
     for name in relnames:
-        p = (
-            (root / name).resolve()
-            if not Path(name).is_absolute()
-            else Path(name).resolve()
-        )
+        p = root / name if not Path(name).is_absolute() else Path(name)
+        p = Path(os.path.normpath(p.absolute()))
         paths.append(p)
     return paths
 
@@ -294,7 +292,7 @@ def main(argv: List[str] | None = None) -> int:
             return 2
 
     # Resolve to full paths (keep accepting absolute names too)
-    paths = resolve_paths(root, relnames)
+    paths = normalize_paths(root, relnames)
     staging_root = get_staging_root()
     # Execute the new action per file
     errors = 0
