@@ -21,6 +21,7 @@ import shared
 DEFAULT_INPUTDATA_ROOT = Path(shared.DEFAULT_INPUTDATA_ROOT)
 DEFAULT_STAGING_ROOT = Path(shared.DEFAULT_STAGING_ROOT)
 STAGE_OWNER = "cesmdata"
+INDENT = "    "
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -164,7 +165,7 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
                 f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
                 f"({staging_root})"
             )
-        print("File is already published and linked.")
+        print(f"{INDENT}File is already published and linked.")
         return
 
     # TODO: Check whether file is published but not relinked.
@@ -186,7 +187,7 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
     dst = staging_root / rel
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
-    print(f"[rimport] staged {src} -> {dst}")
+    print(f"{INDENT}[rimport] staged {src} -> {dst}")
 
 
 def ensure_running_as(target_user: str, argv: list[str]) -> None:
@@ -298,12 +299,13 @@ def main(argv: List[str] | None = None) -> int:
     # Execute the new action per file
     errors = 0
     for p in paths:
+        print(f"'{p}':")
         try:
             stage_data(p, root, staging_root)
         except Exception as e:  # pylint: disable=broad-exception-caught
             # General Exception keeps CLI robust for batch runs
             errors += 1
-            print(f"rimport: error processing {p}: {e}", file=sys.stderr)
+            print(f"{INDENT}rimport: error processing {p}: {e}", file=sys.stderr)
 
     return 0 if errors == 0 else 1
 
