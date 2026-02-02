@@ -147,20 +147,29 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
         staging_root: Root directory where files will be staged.
 
     Raises:
-        RuntimeError: If `src` is a live symlink (already published), or if `src`
-            is outside the inputdata root, or if `src` is already under staging directory.
+        RuntimeError: If `src` is a live symlink (already published, or pointing outside staging),
+            or if `src` is outside the inputdata root, or if `src` is already under staging
+            directory.
         RuntimeError: If `src` is a broken symlink.
         FileNotFoundError: If `src` does not exist.
 
     Guardrails:
-        * Raise if `src` is a *live* symlink ("already published").
+        * Raise if `src` is a *live* symlink to a file in staging root ("already published").
+        * Raise if `src` is a *live* symlink to a file outside staging root ("outside staging").
         * Raise if `src` is a broken symlink or is outside the inputdata root.
     """
     if src.is_symlink():
         if not src.exists(follow_symlinks=True):
             raise RuntimeError(f"Source is a broken symlink: {src}")
+        if not src.resolve().is_relative_to(staging_root.resolve()):
+            raise RuntimeError(
+                f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
+                f"({staging_root})"
+            )
         # TODO: This should be a regular message, not an error.
-        raise RuntimeError("File is already published.")
+        raise RuntimeError("File is already published and linked.")
+
+    # TODO: Check whether file is published but not relinked.
 
     if not src.exists():
         raise FileNotFoundError(f"source not found: {src}")

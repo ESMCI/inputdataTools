@@ -71,18 +71,38 @@ class TestStageData:
         assert dst.exists()
         assert dst.read_text() == "nested data"
 
-    def test_raises_error_for_live_symlink(
+    def test_raises_error_for_live_symlink_already_published(
+        self, inputdata_root, staging_root
+    ):
+        """
+        Test that staging a live, already-published symlink raises RuntimeError with accurate
+        message.
+        """
+        # Create a real file and a symlink to it
+        real_file = staging_root / "real_file.nc"
+        real_file.write_text("data")
+        src = inputdata_root / "link.nc"
+        src.symlink_to(real_file)
+
+        # Should raise RuntimeError for live symlink
+        with pytest.raises(RuntimeError, match="File is already published and linked"):
+            rimport.stage_data(src, inputdata_root, staging_root)
+
+    def test_raises_error_for_live_symlink_pointing_somewhere_other_than_staging(
         self, tmp_path, inputdata_root, staging_root
     ):
-        """Test that staging a live symlink raises RuntimeError."""
-        # Create a real file and a symlink to it
+        """
+        Test that staging a live symlink that points to somewhere other than staging directory
+        raises RuntimeError with accurate message.
+        """
+        # Create a real file outside the staging directory and a symlink to it
         real_file = tmp_path / "real_file.nc"
         real_file.write_text("data")
         src = inputdata_root / "link.nc"
         src.symlink_to(real_file)
 
         # Should raise RuntimeError for live symlink
-        with pytest.raises(RuntimeError, match="File is already published"):
+        with pytest.raises(RuntimeError, match="outside staging directory"):
             rimport.stage_data(src, inputdata_root, staging_root)
 
     def test_raises_error_for_broken_symlink(
