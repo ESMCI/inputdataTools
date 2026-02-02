@@ -156,11 +156,12 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path) -> None:
         * Raise if `src` is a *live* symlink ("already published").
         * Raise if `src` is a broken symlink or is outside the inputdata root.
     """
-    if src.is_symlink() and src.exists():
+    if src.is_symlink():
+        if not src.exists(follow_symlinks=True):
+            raise RuntimeError(f"Source is a broken symlink: {src}")
         # TODO: This should be a regular message, not an error.
         raise RuntimeError("File is already published.")
-    if src.is_symlink() and not src.exists():
-        raise RuntimeError(f"Source is a broken symlink: {src}")
+
     if not src.exists():
         raise FileNotFoundError(f"source not found: {src}")
 
