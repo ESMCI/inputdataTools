@@ -264,7 +264,8 @@ class TestRimportCommandLine:
         # Help should exit with code 0
         assert result.returncode == 0
         assert "usage:" in result.stdout
-        assert "options:" in result.stdout
+        # Python 3.10+ uses "options:", earlier versions use "optional arguments:"
+        assert "options:" in result.stdout or "optional arguments:" in result.stdout
 
     def test_list_with_comments_and_blanks(self, rimport_script, test_env, rimport_env):
         """Test that list file with comments and blank lines works correctly."""

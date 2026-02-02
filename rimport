@@ -37,7 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
         argparse.ArgumentParser: Configured parser ready to parse command-line arguments.
     """
     parser = argparse.ArgumentParser(
-        description="Copy files from CESM inputdata directory to a publishing directory."
+        description="Copy files from CESM inputdata directory to a publishing directory.",
+        add_help=False,  # Disable automatic help to add custom -help flag
     )
 
     # Mutually exclusive: -file or -list (one required)
@@ -72,8 +73,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # Provide -help to mirror legacy behavior
-    parser.add_argument("-help", action="help", help=argparse.SUPPRESS)
+    # Provide -help to mirror legacy behavior (in addition to -h and --help)
+    parser.add_argument(
+        "-h",
+        "--help",
+        "-help",
+        action="help",
+        help="Show this help message and exit",
+    )
 
     return parser
 
