@@ -88,12 +88,12 @@ class TestStageData:
         assert dst.exists()
         assert dst.read_text() == "nested data"
 
-    def test_prints_live_symlink_already_published(
+    def test_prints_live_symlink_already_published_not_downloadable(
         self, inputdata_root, staging_root, capsys
     ):
         """
         Test that staging a live, already-published symlink prints a message and returns
-        immediately without copying anything.
+        immediately without copying anything. Should say it's not available for download.
         """
         # Create a real file in staging and a symlink to it in inputdata
         real_file = staging_root / "real_file.nc"
@@ -106,9 +106,11 @@ class TestStageData:
             # Should print message for live symlink and return early
             rimport.stage_data(src, inputdata_root, staging_root)
 
-            # Verify the right message was printed
+            # Verify the right messages were printed
             stdout = capsys.readouterr().out.strip()
             msg = "File is already published and linked"
+            assert msg in stdout
+            msg = "File is not (yet) available for download"
             assert msg in stdout
 
             # Verify the WRONG message was NOT printed
@@ -117,6 +119,40 @@ class TestStageData:
 
             # Verify that shutil.copy2 was never called (function returned early)
             mock_copy.assert_not_called()
+
+    def test_prints_live_symlink_already_published_is_downloadable(
+        self, inputdata_root, staging_root, capsys
+    ):
+        """
+        Like test_prints_live_symlink_already_published_not_downloadable, but mocks
+        can_file_be_downloaded() to test "is available for download" message.
+        """
+        # Create a real file in staging and a symlink to it in inputdata
+        real_file = staging_root / "real_file.nc"
+        real_file.write_text("data")
+        src = inputdata_root / "link.nc"
+        src.symlink_to(real_file)
+
+        # Mock shutil.copy2 to verify it's never called
+        with patch("shutil.copy2") as mock_copy:
+            # Mock can_file_be_downloaded to return True
+            with patch("rimport.can_file_be_downloaded", return_value=True):
+                # Should print message for live symlink and return early
+                rimport.stage_data(src, inputdata_root, staging_root)
+
+                # Verify that shutil.copy2 was never called (function returned early)
+                mock_copy.assert_not_called()
+
+        # Verify the right messages were printed
+        stdout = capsys.readouterr().out.strip()
+        msg = "File is already published and linked"
+        assert msg in stdout
+        msg = "File is available for download"
+        assert msg in stdout
+
+        # Verify the WRONG message was NOT printed
+        msg = "is already under staging directory"
+        assert msg not in stdout
 
     def test_raises_error_for_live_symlink_pointing_somewhere_other_than_staging(
         self, tmp_path, inputdata_root, staging_root

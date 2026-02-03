@@ -15,6 +15,8 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Iterable, List
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 import shared
 
@@ -22,6 +24,7 @@ DEFAULT_INPUTDATA_ROOT = Path(shared.DEFAULT_INPUTDATA_ROOT)
 DEFAULT_STAGING_ROOT = Path(shared.DEFAULT_STAGING_ROOT)
 STAGE_OWNER = "cesmdata"
 INDENT = "    "
+INPUTDATA_URL = "https://osdf-data.gdex.ucar.edu/ncar/gdex/d651077/cesmdata/inputdata"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -141,7 +144,9 @@ def normalize_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
     return paths
 
 
-def stage_data(src: Path, inputdata_root: Path, staging_root: Path, check: bool = False) -> None:
+def stage_data(
+    src: Path, inputdata_root: Path, staging_root: Path, check: bool = False
+) -> None:
     """Stage a file by mirroring its path under `staging_root`.
 
     Destination path is computed by replacing the `inputdata_root` prefix of `src`
@@ -173,6 +178,10 @@ def stage_data(src: Path, inputdata_root: Path, staging_root: Path, check: bool 
                 f"({staging_root})"
             )
         print(f"{INDENT}File is already published and linked.")
+        if can_file_be_downloaded(src.resolve(), staging_root):
+            print(f"{INDENT}File is available for download.")
+        else:
+            print(f"{INDENT}File is not (yet) available for download.")
         return
 
     # TODO: Check whether file is published but not relinked.
@@ -252,6 +261,38 @@ def get_staging_root() -> Path:
     if env:
         return Path(env).expanduser().resolve()
     return DEFAULT_STAGING_ROOT
+
+
+def can_file_be_downloaded(file_relpath: Path, staging_root: Path, timeout: float = 10):
+    """Check whether a file is available for download from the CESM inputdata server.
+
+    Sends a HEAD request to the CESM inputdata URL to verify if the file exists and is
+    accessible without downloading the entire file.
+
+    Args:
+        file_relpath: Relative path to the file (relative to staging_root), or an absolute
+            path that will be made relative to staging_root.
+        staging_root: Root directory of the staging area, used to compute relative path
+            if file_relpath is absolute.
+        timeout: Maximum time in seconds to wait for the server response. Default is 10.
+
+    Returns:
+        bool: True if the file is accessible (HTTP status 2xx or 3xx), False otherwise
+            (including 404, network errors, timeouts, etc.).
+    """
+    # Get URL
+    if file_relpath.is_absolute():
+        file_relpath = file_relpath.relative_to(staging_root)
+    url = os.path.join(INPUTDATA_URL, file_relpath)
+
+    # Check whether URL can be accessed
+    req = Request(url, method="HEAD")
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            return 200 <= resp.status < 400
+    except HTTPError:
+        # Server reached, but resource doesn't exist (404, 410, etc.)
+        return False
 
 
 def main(argv: List[str] | None = None) -> int:
