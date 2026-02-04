@@ -8,6 +8,8 @@ import importlib.util
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
+import pytest
+
 from shared import DEFAULT_STAGING_ROOT
 
 # Import rimport module from file without .py extension
@@ -30,7 +32,8 @@ RELPATH_THAT_DOES_EXIST = os.path.join(
 
 class TestCanFileBeDownloaded:
     """Test suite for can_file_be_downloaded() function."""
-    
+
+    @pytest.mark.skipif(not os.path.exists("/glade"), reason="This test can only run on Glade")
     def test_existing_file_exists(self):
         """Test that the file that should exist does. If not, other tests will definitely fail."""
         file_abspath = Path(os.path.join(DEFAULT_STAGING_ROOT, RELPATH_THAT_DOES_EXIST))
