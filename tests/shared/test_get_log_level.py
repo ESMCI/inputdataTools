@@ -1,5 +1,5 @@
 """
-Tests for shared.py module functions.
+Tests for shared.py get_log_level() function.
 """
 
 import logging
