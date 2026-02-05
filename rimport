@@ -9,6 +9,7 @@ Do `rimport --help` for more information.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import pwd
 import shutil
@@ -25,6 +26,9 @@ DEFAULT_STAGING_ROOT = Path(shared.DEFAULT_STAGING_ROOT)
 STAGE_OWNER = "cesmdata"
 INDENT = "    "
 INPUTDATA_URL = "https://osdf-data.gdex.ucar.edu/ncar/gdex/d651077/cesmdata/inputdata"
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -177,7 +181,7 @@ def stage_data(
                 f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
                 f"({staging_root})"
             )
-        print(f"{INDENT}File is already published and linked.")
+        logger.info("%sFile is already published and linked.", INDENT)
         print_can_file_be_downloaded(
             can_file_be_downloaded(src.resolve(), staging_root)
         )
@@ -200,21 +204,19 @@ def stage_data(
     dst = staging_root / rel
 
     if dst.exists():
-        print(f"{INDENT}File is already published but NOT linked; do")
-        print(f"{2*INDENT}relink.py {rel}")
-        print(f"{INDENT}to resolve.")
-        print_can_file_be_downloaded(
-            can_file_be_downloaded(rel, staging_root)
-        )
+        logger.info("%sFile is already published but NOT linked; do", INDENT)
+        logger.info("%srelink.py %s", 2 * INDENT, rel)
+        logger.info("%sto resolve.", INDENT)
+        print_can_file_be_downloaded(can_file_be_downloaded(rel, staging_root))
         return
 
     if check:
-        print(f"{INDENT}File is not already published")
+        logger.info("%sFile is not already published", INDENT)
         return
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
-    print(f"{INDENT}[rimport] staged {src} -> {dst}")
+    logger.info("%s[rimport] staged %s -> %s", INDENT, src, dst)
 
 
 def ensure_running_as(target_user: str, argv: list[str]) -> None:
@@ -237,20 +239,18 @@ def ensure_running_as(target_user: str, argv: list[str]) -> None:
     try:
         target_uid = pwd.getpwnam(target_user).pw_uid
     except KeyError as exc:
-        print(
-            f"rimport: target user '{target_user}' not found on this system",
-            file=sys.stderr,
-        )
+        logger.error("rimport: target user '%s' not found on this system", target_user)
         raise SystemExit(2) from exc
 
     if os.geteuid() != target_uid:
         try:
             assert sys.stdin.isatty()
         except AssertionError as exc:
-            print(
-                f"rimport: need interactive TTY to authenticate as '{target_user}' (2FA).\n"
-                f"         Try: sudo -u {target_user} rimport …",
-                file=sys.stderr,
+            logger.error(
+                "rimport: need interactive TTY to authenticate as '%s' (2FA).\n"
+                "         Try: sudo -u %s rimport …",
+                target_user,
+                target_user,
             )
             raise SystemExit(2) from exc
         # Re-exec under target user; this invokes sudo’s normal password/2FA flow.
@@ -310,9 +310,37 @@ def print_can_file_be_downloaded(file_can_be_downloaded: bool):
         file_can_be_downloaded: Boolean indicating if the file can be downloaded.
     """
     if file_can_be_downloaded:
-        print(f"{INDENT}File is available for download.")
+        logger.info("%sFile is available for download.", INDENT)
     else:
-        print(f"{INDENT}File is not (yet) available for download.")
+        logger.info("%sFile is not (yet) available for download.", INDENT)
+
+
+def configure_logging() -> None:
+    """Configure logging to send INFO/WARNING to stdout and ERROR/CRITICAL to stderr.
+
+    Sets up two handlers:
+    - INFO handler: Sends INFO and WARNING level messages to stdout
+    - ERROR handler: Sends ERROR and CRITICAL level messages to stderr
+
+    Both handlers use simple message-only formatting without timestamps or level names.
+    """
+    logger.setLevel(logging.INFO)
+
+    # Handler for INFO and WARNING level messages -> stdout
+    info_handler = logging.StreamHandler(sys.stdout)
+    info_handler.setLevel(logging.INFO)
+    info_handler.addFilter(lambda record: record.levelno < logging.ERROR)
+    info_handler.setFormatter(logging.Formatter("%(message)s"))
+
+    # Handler for ERROR and CRITICAL level messages -> stderr
+    error_handler = logging.StreamHandler(sys.stderr)
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(logging.Formatter("%(message)s"))
+
+    # Clear any existing handlers and add our custom ones
+    logger.handlers.clear()
+    logger.addHandler(info_handler)
+    logger.addHandler(error_handler)
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -337,6 +365,8 @@ def main(argv: List[str] | None = None) -> int:
         1: One or more files failed to stage (errors printed to stderr).
         2: Fatal error (missing inputdata directory, missing file list, etc.).
     """
+    configure_logging()
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -348,7 +378,7 @@ def main(argv: List[str] | None = None) -> int:
 
     root = Path(args.inputdata).expanduser().resolve()
     if not root.exists():
-        print(f"rimport: inputdata directory does not exist: {root}", file=sys.stderr)
+        logger.error("rimport: inputdata directory does not exist: %s", root)
         return 2
 
     # Determine the list of relative filenames to handle
@@ -357,11 +387,11 @@ def main(argv: List[str] | None = None) -> int:
     else:
         list_path = Path(args.filelist).expanduser().resolve()
         if not list_path.exists():
-            print(f"rimport: list file not found: {list_path}", file=sys.stderr)
+            logger.error("rimport: list file not found: %s", list_path)
             return 2
         relnames = read_filelist(list_path)
         if not relnames:
-            print(f"rimport: no filenames found in list: {list_path}", file=sys.stderr)
+            logger.error("rimport: no filenames found in list: %s", list_path)
             return 2
 
     # Resolve to full paths (keep accepting absolute names too)
@@ -370,13 +400,13 @@ def main(argv: List[str] | None = None) -> int:
     # Execute the new action per file
     errors = 0
     for p in paths:
-        print(f"'{p}':")
+        logger.info("'%s':", p)
         try:
             stage_data(p, root, staging_root, args.check)
         except Exception as e:  # pylint: disable=broad-exception-caught
             # General Exception keeps CLI robust for batch runs
             errors += 1
-            print(f"{INDENT}rimport: error processing {p}: {e}", file=sys.stderr)
+            logger.error("%srimport: error processing %s: %s", INDENT, p, e)
 
     return 0 if errors == 0 else 1
 

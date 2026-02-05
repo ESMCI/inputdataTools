@@ -57,7 +57,7 @@ class TestStageData:
         assert dst.exists()
         assert dst.read_text() == "data content"
 
-    def test_check_doesnt_copy(self, inputdata_root, staging_root, capsys):
+    def test_check_doesnt_copy(self, inputdata_root, staging_root, caplog):
         """Test that a file is NOT copied to the staging directory if check is True"""
         # Create file in inputdata root
         src = inputdata_root / "file.nc"
@@ -70,8 +70,8 @@ class TestStageData:
         dst = staging_root / "file.nc"
         assert not dst.exists()
 
-        # Verify message was printed
-        assert "not already published" in capsys.readouterr().out.strip()
+        # Verify message was logged
+        assert "not already published" in caplog.text
 
     def test_preserves_directory_structure(self, inputdata_root, staging_root):
         """Test that directory structure is preserved in staging."""
@@ -89,7 +89,7 @@ class TestStageData:
         assert dst.read_text() == "nested data"
 
     def test_prints_live_symlink_already_published_not_downloadable(
-        self, inputdata_root, staging_root, capsys
+        self, inputdata_root, staging_root, caplog
     ):
         """
         Test that staging a live, already-published symlink prints a message and returns
@@ -106,22 +106,21 @@ class TestStageData:
             # Should print message for live symlink and return early
             rimport.stage_data(src, inputdata_root, staging_root)
 
-            # Verify the right messages were printed
-            stdout = capsys.readouterr().out.strip()
+            # Verify the right messages were logged
             msg = "File is already published and linked"
-            assert msg in stdout
+            assert msg in caplog.text
             msg = "File is not (yet) available for download"
-            assert msg in stdout
+            assert msg in caplog.text
 
-            # Verify the WRONG message was NOT printed
+            # Verify the WRONG message was NOT logged
             msg = "is already under staging directory"
-            assert msg not in stdout
+            assert msg not in caplog.text
 
             # Verify that shutil.copy2 was never called (function returned early)
             mock_copy.assert_not_called()
 
     def test_prints_live_symlink_already_published_is_downloadable(
-        self, inputdata_root, staging_root, capsys
+        self, inputdata_root, staging_root, caplog
     ):
         """
         Like test_prints_live_symlink_already_published_not_downloadable, but mocks
@@ -143,19 +142,18 @@ class TestStageData:
                 # Verify that shutil.copy2 was never called (function returned early)
                 mock_copy.assert_not_called()
 
-        # Verify the right messages were printed
-        stdout = capsys.readouterr().out.strip()
+        # Verify the right messages were logged
         msg = "File is already published and linked"
-        assert msg in stdout
+        assert msg in caplog.text
         msg = "File is available for download"
-        assert msg in stdout
+        assert msg in caplog.text
 
-        # Verify the WRONG message was NOT printed
+        # Verify the WRONG message was NOT logged
         msg = "is already under staging directory"
-        assert msg not in stdout
+        assert msg not in caplog.text
 
     def test_prints_published_but_not_linked(
-        self, inputdata_root, staging_root, capsys
+        self, inputdata_root, staging_root, caplog
     ):
         """
         Tests printed message for when a file has been published (copied to staging root) but not
@@ -178,14 +176,13 @@ class TestStageData:
                 # Verify that shutil.copy2 was never called (function returned early)
                 mock_copy.assert_not_called()
 
-        # Verify the right messages were printed or not
-        stdout = capsys.readouterr().out.strip()
+        # Verify the right messages were logged or not
         msg = "File is already published and linked"
-        assert msg not in stdout
+        assert msg not in caplog.text
         msg = "File is already published but NOT linked; do"
-        assert msg in stdout
+        assert msg in caplog.text
         msg = "File is available for download"
-        assert msg in stdout
+        assert msg in caplog.text
 
     def test_raises_error_for_live_symlink_pointing_somewhere_other_than_staging(
         self, tmp_path, inputdata_root, staging_root
