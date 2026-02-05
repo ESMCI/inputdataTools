@@ -12,7 +12,7 @@ import logging
 import time
 from pathlib import Path
 
-from shared import DEFAULT_INPUTDATA_ROOT, DEFAULT_STAGING_ROOT
+from shared import DEFAULT_INPUTDATA_ROOT, DEFAULT_STAGING_ROOT, get_log_level
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -397,12 +397,7 @@ def process_args(args):
         args (argparse.Namespace): Parsed command-line arguments.
     """
     # Configure logging based on verbosity flags
-    if args.quiet:
-        args.log_level = logging.WARNING
-    elif args.verbose:
-        args.log_level = logging.DEBUG
-    else:
-        args.log_level = logging.INFO
+    args.log_level = get_log_level(quiet=args.quiet, verbose=args.verbose)
 
     # Ensure that items_to_process is a list
     if hasattr(args, "items_to_process") and not isinstance(args.items_to_process, list):

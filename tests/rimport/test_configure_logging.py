@@ -123,3 +123,39 @@ class TestConfigureLogging:
 
         rimport.configure_logging()
         assert len(rimport.logger.handlers) == 2  # Still 2, not 6
+
+    def test_configure_with_debug_level(self, capsys):
+        """Test that configure_logging accepts DEBUG level."""
+        rimport.configure_logging(logging.DEBUG)
+
+        # DEBUG messages should now be logged
+        rimport.logger.debug("Debug message")
+
+        captured = capsys.readouterr()
+        assert "Debug message" in captured.out
+        assert captured.err == ""
+
+    def test_configure_with_warning_level(self, capsys):
+        """Test that configure_logging accepts WARNING level."""
+        rimport.configure_logging(logging.WARNING)
+
+        # INFO messages should be suppressed
+        rimport.logger.info("Info message")
+        # WARNING messages should be logged
+        rimport.logger.warning("Warning message")
+
+        captured = capsys.readouterr()
+        assert "Info message" not in captured.out
+        assert "Warning message" in captured.out
+        assert captured.err == ""
+
+    def test_configure_with_info_level_suppresses_debug(self, capsys):
+        """Test that INFO level suppresses DEBUG messages."""
+        rimport.configure_logging(logging.INFO)
+
+        rimport.logger.debug("Debug message")
+        rimport.logger.info("Info message")
+
+        captured = capsys.readouterr()
+        assert "Debug message" not in captured.out
+        assert "Info message" in captured.out

@@ -126,3 +126,42 @@ class TestBuildParser:
         args = parser.parse_args(["-list", "files.txt", "-inputdata", "/my/data"])
         assert args.filelist == "files.txt"
         assert args.inputdata == "/my/data"
+
+    def test_quiet_default(self):
+        """Test that quiet defaults to False."""
+        parser = rimport.build_parser()
+        args = parser.parse_args(["-file", "test.nc"])
+        assert args.quiet is False
+
+    def test_verbose_default(self):
+        """Test that verbose defaults to False."""
+        parser = rimport.build_parser()
+        args = parser.parse_args(["-file", "test.nc"])
+        assert args.verbose is False
+
+    @pytest.mark.parametrize("quiet_flag", ["-q", "--quiet"])
+    def test_quiet_arguments_accepted(self, quiet_flag):
+        """Test that all quiet argument flags are accepted."""
+        parser = rimport.build_parser()
+        args = parser.parse_args(["-file", "test.nc", quiet_flag])
+        assert args.quiet is True
+        assert args.verbose is False
+
+    @pytest.mark.parametrize("verbose_flag", ["-v", "--verbose"])
+    def test_verbose_arguments_accepted(self, verbose_flag):
+        """Test that all verbose argument flags are accepted."""
+        parser = rimport.build_parser()
+        args = parser.parse_args(["-file", "test.nc", verbose_flag])
+        assert args.verbose is True
+        assert args.quiet is False
+
+    def test_quiet_and_verbose_mutually_exclusive(self, capsys):
+        """Test that -q and -v cannot be used together."""
+        parser = rimport.build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["-file", "test.nc", "-q", "-v"])
+
+        # Check that the error message explains the problem
+        captured = capsys.readouterr()
+        stderr_lines = captured.err.strip().split("\n")
+        assert "not allowed with argument" in stderr_lines[-1]

@@ -89,6 +89,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check whether file(s) is/are already published.",
     )
 
+    # Verbosity options (mutually exclusive)
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose output (DEBUG level)"
+    )
+    verbosity_group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Quiet mode (show only warnings and errors)",
+    )
+
     # Provide -help to mirror legacy behavior (in addition to -h and --help)
     parser.add_argument(
         "-h",
@@ -315,20 +327,23 @@ def print_can_file_be_downloaded(file_can_be_downloaded: bool):
         logger.info("%sFile is not (yet) available for download.", INDENT)
 
 
-def configure_logging() -> None:
+def configure_logging(log_level: int = logging.INFO) -> None:
     """Configure logging to send INFO/WARNING to stdout and ERROR/CRITICAL to stderr.
 
     Sets up two handlers:
-    - INFO handler: Sends INFO and WARNING level messages to stdout
+    - INFO handler: Sends INFO, WARNING, and DEBUG level messages to stdout
     - ERROR handler: Sends ERROR and CRITICAL level messages to stderr
 
     Both handlers use simple message-only formatting without timestamps or level names.
-    """
-    logger.setLevel(logging.INFO)
 
-    # Handler for INFO and WARNING level messages -> stdout
+    Args:
+        log_level: Minimum logging level (DEBUG, INFO, or WARNING). Default is INFO.
+    """
+    logger.setLevel(log_level)
+
+    # Handler for INFO, WARNING, and DEBUG level messages -> stdout
     info_handler = logging.StreamHandler(sys.stdout)
-    info_handler.setLevel(logging.INFO)
+    info_handler.setLevel(logging.DEBUG)  # Accept all levels, filter will handle it
     info_handler.addFilter(lambda record: record.levelno < logging.ERROR)
     info_handler.setFormatter(logging.Formatter("%(message)s"))
 
@@ -365,10 +380,12 @@ def main(argv: List[str] | None = None) -> int:
         1: One or more files failed to stage (errors printed to stderr).
         2: Fatal error (missing inputdata directory, missing file list, etc.).
     """
-    configure_logging()
-
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # Configure logging based on verbosity flags
+    log_level = shared.get_log_level(quiet=args.quiet, verbose=args.verbose)
+    configure_logging(log_level)
 
     # Ensure we are running as the STAGE_OWNER account before touching the tree
     # Set env var RIMPORT_SKIP_USER_CHECK=1 if you prefer to run `sudox -u STAGE_OWNER rimport …`
