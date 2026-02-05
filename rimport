@@ -72,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--inputdata",
         "-inputdata",
-        dest="inputdata",
+        dest="inputdata_root",
         metavar="inputdata_dir",
         default=DEFAULT_INPUTDATA_ROOT,
         help=(
@@ -384,7 +384,7 @@ def main(argv: List[str] | None = None) -> int:
     if not args.check and os.getenv("RIMPORT_SKIP_USER_CHECK") != "1":
         ensure_running_as(STAGE_OWNER, sys.argv)
 
-    root = Path(args.inputdata).expanduser().resolve()
+    root = Path(args.inputdata_root).expanduser().resolve()
     if not root.exists():
         logger.error("rimport: inputdata directory does not exist: %s", root)
         return 2

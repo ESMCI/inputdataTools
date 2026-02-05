@@ -54,7 +54,7 @@ class TestBuildParser:
         parser = rimport.build_parser()
         inputdata_dir = "/some/dir"
         args = parser.parse_args([inputdata_flag, inputdata_dir, "-f", "dummy_file.nc"])
-        assert args.inputdata == inputdata_dir
+        assert args.inputdata_root == inputdata_dir
 
     def test_file_and_list_mutually_exclusive(self, capsys):
         """Test that -file and -list cannot be used together."""
@@ -82,7 +82,7 @@ class TestBuildParser:
         """Test that -inputdata has correct default value."""
         parser = rimport.build_parser()
         args = parser.parse_args(["-file", "test.txt"])
-        assert args.inputdata == rimport.DEFAULT_INPUTDATA_ROOT
+        assert args.inputdata_root == rimport.DEFAULT_INPUTDATA_ROOT
 
     def test_check_default(self):
         """Test that --check has the correct default value."""
@@ -102,7 +102,7 @@ class TestBuildParser:
         parser = rimport.build_parser()
         custom_path = "/custom/path"
         args = parser.parse_args(["-file", "test.txt", "-inputdata", custom_path])
-        assert args.inputdata == custom_path
+        assert args.inputdata_root == custom_path
 
     @pytest.mark.parametrize("help_flag", ["-help", "-h", "--help"])
     def test_help_flags_show_help(self, help_flag):
@@ -118,14 +118,14 @@ class TestBuildParser:
         parser = rimport.build_parser()
         args = parser.parse_args(["-file", "data.nc", "-inputdata", "/my/data"])
         assert args.file == "data.nc"
-        assert args.inputdata == "/my/data"
+        assert args.inputdata_root == "/my/data"
 
     def test_list_with_inputdata(self):
         """Test combining -list with -inputdata."""
         parser = rimport.build_parser()
         args = parser.parse_args(["-list", "files.txt", "-inputdata", "/my/data"])
         assert args.filelist == "files.txt"
-        assert args.inputdata == "/my/data"
+        assert args.inputdata_root == "/my/data"
 
     def test_quiet_default(self):
         """Test that quiet defaults to False."""
