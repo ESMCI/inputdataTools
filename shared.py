@@ -53,6 +53,23 @@ def add_inputdata_root(parser: argparse.ArgumentParser):
     )
 
 
+def add_help(parser: argparse.ArgumentParser):
+    """Add help option to an argument parser.
+
+    Provides -help to mirror legacy rimport behavior (in addition to -h and --help).
+
+    Args:
+        parser: ArgumentParser instance to add the help arg to.
+    """
+    parser.add_argument(
+        "-h",
+        "--help",
+        "-help",
+        action="help",
+        help="Show this help message and exit",
+    )
+
+
 def add_parser_verbosity_group(parser: argparse.ArgumentParser):
     """Add mutually exclusive verbosity options to an argument parser.
 

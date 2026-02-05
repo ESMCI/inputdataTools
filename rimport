@@ -83,14 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
     # Add verbosity options
     shared.add_parser_verbosity_group(parser)
 
-    # Provide -help to mirror legacy behavior (in addition to -h and --help)
-    parser.add_argument(
-        "-h",
-        "--help",
-        "-help",
-        action="help",
-        help="Show this help message and exit",
-    )
+    # Add help text
+    shared.add_help(parser)
 
     return parser
 
