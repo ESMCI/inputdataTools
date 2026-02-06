@@ -60,27 +60,14 @@ class TestBuildParser:
         )
         assert args.inputdata_root == inputdata_root
 
-    def test_file_and_list_mutually_exclusive(self, capsys):
-        """Test that -file and -list cannot be used together."""
+    def test_file_and_list_not_mutually_exclusive(self, capsys):
+        """Test that -file and -list can be used together."""
         parser = rimport.build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["-file", "test.txt", "-list", "files.txt"])
-
-        # Check that the error message explains the problem
-        captured = capsys.readouterr()
-        stderr_lines = captured.err.strip().split("\n")
-        assert "not allowed with argument" in stderr_lines[-1]
-
-    def test_file_or_list_required(self, capsys):
-        """Test that either -file or -list is required."""
-        parser = rimport.build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args([])
-
-        # Check that the error message explains the problem
-        captured = capsys.readouterr()
-        stderr_lines = captured.err.strip().split("\n")
-        assert "error: one of the arguments" in stderr_lines[-1]
+        file = "test.txt"
+        filelist = "files.txt"
+        args = parser.parse_args(["-file", file, "-list", filelist])
+        assert args.file == file
+        assert args.filelist == filelist
 
     def test_inputdata_default(self):
         """Test that -inputdata has correct default value."""

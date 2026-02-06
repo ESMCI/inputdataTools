@@ -8,9 +8,6 @@ the helper functions to isolate main()'s behavior.
 import os
 import importlib.util
 from importlib.machinery import SourceFileLoader
-from pathlib import Path
-from unittest.mock import patch, call
-import pytest
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
@@ -196,5 +193,46 @@ class TestGetRelnamesToProcess:
         files_to_process, result = rimport.get_files_to_process(
             file=None, filelist=filelist
         )
+        assert result == 2
+        assert files_to_process is None
+
+    def test_single_file_and_list(self, tmp_path):
+        """Test giving it a single file by its relative path"""
+        # Setup
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+
+        filename = "test.nc"
+        test_file = inputdata_root / filename
+        test_file.write_text("abc123")
+
+        filenames = []
+        for i in range(2):
+            f = f"test{i}.txt"
+            filenames.append(f)
+            (inputdata_root / f).write_text("def567")
+
+        filelist = tmp_path / "file_list.txt"
+        filelist.write_text("\n".join(filenames), encoding="utf8")
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=filename, filelist=filelist
+        )
+
+        # Verify
+        assert result == 0
+        assert files_to_process == [filename] + filenames
+
+    def test_single_or_list_required(self):
+        """Test that either file or filelist is required"""
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=None, filelist=None
+        )
+
+        # Verify
         assert result == 2
         assert files_to_process is None

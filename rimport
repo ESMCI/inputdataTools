@@ -52,16 +52,15 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,  # Disable automatic help to add custom -help flag
     )
 
-    # Mutually exclusive: -file or -list (one required)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
+    parser.add_argument(
         "--file",
         "-file",
         dest="file",
         metavar="filename",
         help="Provide a file to import. Must be in the CESM inputdata directory.",
     )
-    group.add_argument(
+
+    parser.add_argument(
         "--list",
         "-list",
         dest="filelist",
@@ -309,12 +308,11 @@ def print_can_file_be_downloaded(file_can_be_downloaded: bool):
 def get_files_to_process(file: str, filelist: str):
     """Get list of files to process.
 
-    Uses either --file or --filelist. "Prefers" --file, but they're actually mutually exclusive, so
-    don't rely on that.
+    Uses --file and/or --filelist arguments.
 
     Args:
         file (str): Single file to process.
-        filelist (str): File containing list of files to process
+        filelist (str): File containing list of files to process.
 
     Returns:
         list: List of files to process
@@ -323,14 +321,22 @@ def get_files_to_process(file: str, filelist: str):
     if file is not None:
         files_to_process = [file]
     else:
+        files_to_process = []
+
+    if filelist is not None:
         list_path = Path(filelist).expanduser().resolve()
         if not list_path.exists():
             logger.error("rimport: list file not found: %s", list_path)
             return None, 2
-        files_to_process = read_filelist(list_path)
-        if not files_to_process:
+        files_in_list = read_filelist(list_path)
+        if not files_in_list:
             logger.error("rimport: no filenames found in list: %s", list_path)
             return None, 2
+        files_to_process.extend(files_in_list)
+
+    if not files_to_process:
+        logger.error("rimport: At least one of --file or --filelist is required")
+        return None, 2
 
     return files_to_process, 0
 
