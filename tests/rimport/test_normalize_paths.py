@@ -3,7 +3,6 @@ Tests for normalize_paths() function in rimport script.
 """
 
 import os
-import sys
 import importlib.util
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -20,7 +19,7 @@ spec = importlib.util.spec_from_loader("rimport", loader)
 if spec is None:
     raise ImportError(f"Could not create spec for rimport from {rimport_path}")
 rimport = importlib.util.module_from_spec(spec)
-sys.modules["rimport"] = rimport
+# Don't add to sys.modules to avoid conflict with other test files
 loader.exec_module(rimport)
 
 

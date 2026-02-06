@@ -3,12 +3,14 @@ Tests for stage_data() function in rimport script.
 """
 
 import os
-import sys
+import logging
 import importlib.util
 from importlib.machinery import SourceFileLoader
 from unittest.mock import patch
 
 import pytest
+
+import shared
 
 # Import rimport module from file without .py extension
 rimport_path = os.path.join(
@@ -20,8 +22,17 @@ spec = importlib.util.spec_from_loader("rimport", loader)
 if spec is None:
     raise ImportError(f"Could not create spec for rimport from {rimport_path}")
 rimport = importlib.util.module_from_spec(spec)
-sys.modules["rimport"] = rimport
+# Don't add to sys.modules to avoid conflict with other test files
 loader.exec_module(rimport)
+
+
+@pytest.fixture(autouse=True)
+def configure_logging_for_tests():
+    """Configure logging for all tests in this module."""
+    shared.configure_logging(logging.INFO)
+    yield
+    # Cleanup
+    rimport.logger.handlers.clear()
 
 
 @pytest.fixture(name="inputdata_root")
@@ -119,8 +130,9 @@ class TestStageData:
             # Verify that shutil.copy2 was never called (function returned early)
             mock_copy.assert_not_called()
 
+    @patch.object(rimport, "can_file_be_downloaded")
     def test_prints_live_symlink_already_published_is_downloadable(
-        self, inputdata_root, staging_root, caplog
+        self, mock_can_file_be_downloaded, inputdata_root, staging_root, caplog
     ):
         """
         Like test_prints_live_symlink_already_published_not_downloadable, but mocks
@@ -132,15 +144,16 @@ class TestStageData:
         src = inputdata_root / "link.nc"
         src.symlink_to(real_file)
 
+        # Mock can_file_be_downloaded to return True
+        mock_can_file_be_downloaded.return_value = True
+
         # Mock shutil.copy2 to verify it's never called
         with patch("shutil.copy2") as mock_copy:
-            # Mock can_file_be_downloaded to return True
-            with patch("rimport.can_file_be_downloaded", return_value=True):
-                # Should print message for live symlink and return early
-                rimport.stage_data(src, inputdata_root, staging_root)
+            # Should print message for live symlink and return early
+            rimport.stage_data(src, inputdata_root, staging_root)
 
-                # Verify that shutil.copy2 was never called (function returned early)
-                mock_copy.assert_not_called()
+            # Verify that shutil.copy2 was never called (function returned early)
+            mock_copy.assert_not_called()
 
         # Verify the right messages were logged
         msg = "File is already published and linked"
@@ -152,8 +165,9 @@ class TestStageData:
         msg = "is already under staging directory"
         assert msg not in caplog.text
 
+    @patch.object(rimport, "can_file_be_downloaded")
     def test_prints_published_but_not_linked(
-        self, inputdata_root, staging_root, caplog
+        self, mock_can_file_be_downloaded, inputdata_root, staging_root, caplog
     ):
         """
         Tests printed message for when a file has been published (copied to staging root) but not
@@ -166,15 +180,17 @@ class TestStageData:
         inputdata = inputdata_root / filename
         inputdata.write_text("data")
 
+        # Mock can_file_be_downloaded to return True
+        mock_can_file_be_downloaded.return_value = True
+
         # Mock shutil.copy2 to verify it's never called
         with patch("shutil.copy2") as mock_copy:
-            # Mock can_file_be_downloaded to return True
-            with patch("rimport.can_file_be_downloaded", return_value=True):
-                # Should print message for live symlink and return early
-                rimport.stage_data(inputdata, inputdata_root, staging_root)
 
-                # Verify that shutil.copy2 was never called (function returned early)
-                mock_copy.assert_not_called()
+            # Should print message for live symlink and return early
+            rimport.stage_data(inputdata, inputdata_root, staging_root)
+
+            # Verify that shutil.copy2 was never called (function returned early)
+            mock_copy.assert_not_called()
 
         # Verify the right messages were logged or not
         msg = "File is already published and linked"
