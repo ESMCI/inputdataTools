@@ -5,17 +5,24 @@ relative path in a target directory tree.
 """
 
 import os
-import sys
 import pwd
 import argparse
 import logging
 import time
 from pathlib import Path
 
-from shared import DEFAULT_INPUTDATA_ROOT, DEFAULT_STAGING_ROOT
-
-# Set up logger
-logger = logging.getLogger(__name__)
+from shared import (
+    DEFAULT_INPUTDATA_ROOT,
+    DEFAULT_STAGING_ROOT,
+    get_log_level,
+    add_parser_verbosity_group,
+    add_inputdata_root,
+    validate_paths,
+    validate_directory,
+    configure_logging,
+    logger,
+    INDENT,
+)
 
 # Define a custom log level that always prints
 ALWAYS = logging.CRITICAL * 2
@@ -157,9 +164,7 @@ def find_owned_files_scandir(item, user_uid, inputdata_root=DEFAULT_INPUTDATA_RO
                         )
 
                     # Things other than directories are handled separately
-                    elif (
-                        entry_path := handle_non_dir(entry, user_uid)
-                    ) is not None:
+                    elif (entry_path := handle_non_dir(entry, user_uid)) is not None:
                         yield entry_path
 
                 except (OSError, PermissionError) as e:
@@ -175,7 +180,11 @@ def find_owned_files_scandir(item, user_uid, inputdata_root=DEFAULT_INPUTDATA_RO
 
 
 def replace_files_with_symlinks(
-    item_to_process, target_dir, username, inputdata_root=DEFAULT_INPUTDATA_ROOT, dry_run=False
+    item_to_process,
+    target_dir,
+    username,
+    inputdata_root=DEFAULT_INPUTDATA_ROOT,
+    dry_run=False,
 ):
     """
     Finds files owned by a specific user in a source directory tree,
@@ -210,13 +219,15 @@ def replace_files_with_symlinks(
     )
 
     # Use efficient scandir-based search
-    for file_path in find_owned_files_scandir(item_to_process, user_uid, inputdata_root):
-        replace_one_file_with_symlink(inputdata_root, target_dir, file_path, dry_run=dry_run)
+    for file_path in find_owned_files_scandir(
+        item_to_process, user_uid, inputdata_root
+    ):
+        replace_one_file_with_symlink(
+            inputdata_root, target_dir, file_path, dry_run=dry_run
+        )
 
 
-def replace_one_file_with_symlink(
-    inputdata_root, target_dir, file_path, dry_run=False
-):
+def replace_one_file_with_symlink(inputdata_root, target_dir, file_path, dry_run=False):
     """
     Given a file, replaces it with a symbolic link to the same relative path in a target directory
     tree.
@@ -227,7 +238,7 @@ def replace_one_file_with_symlink(
         file_path (str): The path of the file to be replaced.
         dry_run (bool): If True, only show what would be done without making changes.
     """
-    logger.info("Found owned file: %s", file_path)
+    logger.info("'%s':", file_path)
 
     # Determine the relative path and the new link's destination
     relative_path = os.path.relpath(file_path, inputdata_root)
@@ -236,9 +247,9 @@ def replace_one_file_with_symlink(
     # Check if the target file actually exists
     if not os.path.exists(link_target):
         logger.warning(
-            "Warning: Corresponding file '%s' not found for '%s'. Skipping.",
+            "%sWarning: Corresponding file '%s' not found. Skipping.",
+            INDENT,
             link_target,
-            file_path,
         )
         return
 
@@ -247,7 +258,8 @@ def replace_one_file_with_symlink(
 
     if dry_run:
         logger.info(
-            "[DRY RUN] Would create symbolic link: %s -> %s",
+            "%s[DRY RUN] Would create symbolic link: %s -> %s",
+            INDENT,
             link_name,
             link_target,
         )
@@ -256,9 +268,9 @@ def replace_one_file_with_symlink(
     # Remove the original file
     try:
         os.rename(link_name, link_name + ".tmp")
-        logger.info("Deleted original file: %s", link_name)
+        logger.info("%sDeleted original file: %s", INDENT, link_name)
     except OSError as e:
-        logger.error("Error deleting file %s: %s. Skipping.", link_name, e)
+        logger.error("%sError deleting file %s: %s. Skipping.", INDENT, link_name, e)
         return
 
     # Create the symbolic link, handling necessary parent directories
@@ -267,52 +279,12 @@ def replace_one_file_with_symlink(
         os.makedirs(os.path.dirname(link_name), exist_ok=True)
         os.symlink(link_target, link_name)
         os.remove(link_name + ".tmp")
-        logger.info("Created symbolic link: %s -> %s", link_name, link_target)
+        logger.info("%sCreated symbolic link: %s -> %s", INDENT, link_name, link_target)
     except OSError as e:
         os.rename(link_name + ".tmp", link_name)
-        logger.error("Error creating symlink for %s: %s. Skipping.", link_name, e)
-
-
-def validate_paths(path, check_is_dir=False):
-    """
-    Validate that one or more paths exist.
-
-    Args:
-        path (str or list): The path to validate, or a list of such paths.
-
-    Returns:
-        str or list: The absolute path(s) if valid.
-
-    Raises:
-        argparse.ArgumentTypeError: If a path doesn't exist.
-    """
-    if isinstance(path, list):
-        result = []
-        for item in path:
-            result.append(validate_paths(item, check_is_dir=check_is_dir))
-        return result
-
-    if not os.path.exists(path):
-        raise argparse.ArgumentTypeError(f"'{path}' does not exist")
-    if check_is_dir and not os.path.isdir(path):
-        raise argparse.ArgumentTypeError(f"'{path}' is not a directory")
-    return os.path.abspath(path)
-
-
-def validate_directory(path):
-    """
-    Validate that one or more directories exist.
-
-    Args:
-        path (str or list): The directory to validate, or a list of such directories.
-
-    Returns:
-        str or list: The absolute path(s) if valid.
-
-    Raises:
-        argparse.ArgumentTypeError: If a path doesn't exist.
-    """
-    return validate_paths(path, check_is_dir=True)
+        logger.error(
+            "%sError creating symlink for %s: %s. Skipping.", INDENT, link_name, e
+        )
 
 
 def parse_arguments():
@@ -347,27 +319,11 @@ def parse_arguments():
         ),
     )
 
-    # The root of the directory tree containing CESM input data.
-    # ONLY INTENDED FOR USE IN TESTING
-    parser.add_argument(
-        "--inputdata-root",
-        "-inputdata",  # to match rimport
-        type=validate_directory,
-        default=DEFAULT_INPUTDATA_ROOT,
-        help=argparse.SUPPRESS,
-    )
+    # Add inputdata_root option flags
+    add_inputdata_root(parser)
 
-    # Verbosity options (mutually exclusive)
-    verbosity_group = parser.add_mutually_exclusive_group()
-    verbosity_group.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
-    )
-    verbosity_group.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Quiet mode (show only warnings and errors)",
-    )
+    # Add verbosity options
+    add_parser_verbosity_group(parser)
 
     parser.add_argument(
         "--dry-run",
@@ -397,15 +353,12 @@ def process_args(args):
         args (argparse.Namespace): Parsed command-line arguments.
     """
     # Configure logging based on verbosity flags
-    if args.quiet:
-        args.log_level = logging.WARNING
-    elif args.verbose:
-        args.log_level = logging.DEBUG
-    else:
-        args.log_level = logging.INFO
+    args.log_level = get_log_level(quiet=args.quiet, verbose=args.verbose)
 
     # Ensure that items_to_process is a list
-    if hasattr(args, "items_to_process") and not isinstance(args.items_to_process, list):
+    if hasattr(args, "items_to_process") and not isinstance(
+        args.items_to_process, list
+    ):
         args.items_to_process = [args.items_to_process]
 
     # Check that everything is an absolute path (should have been converted, if needed, during
@@ -438,7 +391,7 @@ def main():
 
     args = parse_arguments()
 
-    logging.basicConfig(level=args.log_level, format="%(message)s", stream=sys.stdout)
+    configure_logging(args.log_level)
 
     my_username = os.environ["USER"]
 

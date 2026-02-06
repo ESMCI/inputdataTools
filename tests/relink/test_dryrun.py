@@ -16,6 +16,8 @@ sys.path.insert(
 # pylint: disable=wrong-import-position
 import relink  # noqa: E402
 
+from shared import INDENT
+
 
 @pytest.fixture(name="dry_run_setup")
 def fixture_dry_run_setup(temp_dirs):
@@ -70,7 +72,7 @@ def test_dry_run_shows_message(dry_run_setup, caplog):
 
     # Check that dry-run messages were logged
     assert "DRY RUN MODE" in caplog.text
-    assert "[DRY RUN] Would create symbolic link:" in caplog.text
+    assert f"{INDENT}[DRY RUN] Would create symbolic link:" in caplog.text
     assert f"{source_file} -> {target_file}" in caplog.text
 
 
@@ -85,7 +87,7 @@ def test_dry_run_no_delete_or_create_messages(dry_run_setup, caplog):
         )
 
     # Verify actual operation messages are NOT logged
-    assert "Deleted original file:" not in caplog.text
-    assert "Created symbolic link:" not in caplog.text
+    assert f"{INDENT}Deleted original file:" not in caplog.text
+    assert f"{INDENT}Created symbolic link:" not in caplog.text
     # But the dry-run message should be there
-    assert "[DRY RUN] Would create symbolic link: " in caplog.text
+    assert f"{INDENT}[DRY RUN] Would create symbolic link: " in caplog.text

@@ -14,6 +14,8 @@ sys.path.insert(
 # pylint: disable=wrong-import-position
 import relink  # noqa: E402
 
+from shared import INDENT
+
 
 def test_basic_file_replacement(temp_dirs):
     """Test basic functionality: replace owned file with symlink."""
@@ -83,7 +85,7 @@ def test_missing_target_file(temp_dirs, caplog):
     assert os.path.isfile(source_file), "Original file should still exist"
 
     # Check warning message
-    assert "Warning: Corresponding file " in caplog.text
+    assert f"{INDENT}Warning: Corresponding file " in caplog.text
     assert " not found" in caplog.text
 
 
@@ -117,7 +119,7 @@ def test_absolute_paths(temp_dirs):
 
 
 def test_print_found_owned_file(temp_dirs, caplog):
-    """Test that 'Found owned file' message is printed."""
+    """Test that message with filename is printed."""
     source_dir, target_dir = temp_dirs
 
     # Create a file owned by current user
@@ -133,8 +135,8 @@ def test_print_found_owned_file(temp_dirs, caplog):
     with caplog.at_level(logging.INFO):
         relink.replace_one_file_with_symlink(source_dir, target_dir, source_file)
 
-    # Check that "Found owned file" message was logged
-    assert "Found owned file:" in caplog.text
+    # Check that message was logged
+    assert f"'{source_file}':" in caplog.text
     assert source_file in caplog.text
 
 
@@ -156,8 +158,8 @@ def test_print_deleted_and_created_messages(temp_dirs, caplog):
         relink.replace_one_file_with_symlink(source_dir, target_dir, source_file)
 
     # Check messages
-    assert "Deleted original file:" in caplog.text
-    assert "Created symbolic link:" in caplog.text
+    assert f"{INDENT}Deleted original file:" in caplog.text
+    assert f"{INDENT}Created symbolic link:" in caplog.text
     assert f"{source_file} -> {target_file}" in caplog.text
 
 
@@ -184,7 +186,7 @@ def test_error_creating_symlink(temp_dirs, caplog):
             relink.replace_one_file_with_symlink(source_dir, target_dir, source_file)
 
         # Check error message
-        assert "Error creating symlink" in caplog.text
+        assert f"{INDENT}Error creating symlink" in caplog.text
         assert source_file in caplog.text
 
 
@@ -254,5 +256,5 @@ def test_error_deleting_file(temp_dirs, caplog):
             relink.replace_one_file_with_symlink(source_dir, target_dir, source_file)
 
         # Check error message
-        assert "Error deleting file" in caplog.text
+        assert f"{INDENT}Error deleting file" in caplog.text
         assert source_file in caplog.text

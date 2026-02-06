@@ -9,6 +9,7 @@ Do `rimport --help` for more information.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import pwd
 import shutil
@@ -19,12 +20,15 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 import shared
+INDENT = shared.INDENT
 
 DEFAULT_INPUTDATA_ROOT = Path(shared.DEFAULT_INPUTDATA_ROOT)
 DEFAULT_STAGING_ROOT = Path(shared.DEFAULT_STAGING_ROOT)
 STAGE_OWNER = "cesmdata"
-INDENT = "    "
 INPUTDATA_URL = "https://osdf-data.gdex.ucar.edu/ncar/gdex/d651077/cesmdata/inputdata"
+
+# Configure logging
+logger = shared.logger
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,41 +45,40 @@ def build_parser() -> argparse.ArgumentParser:
         argparse.ArgumentParser: Configured parser ready to parse command-line arguments.
     """
     parser = argparse.ArgumentParser(
-        description="Copy files from CESM inputdata directory to a publishing directory.",
+        description=(
+            f"Copy files from CESM inputdata directory ({DEFAULT_INPUTDATA_ROOT}) to a publishing"
+            " directory."
+        ),
         add_help=False,  # Disable automatic help to add custom -help flag
     )
 
-    # Mutually exclusive: -file or -list (one required)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
+    parser.add_argument(
         "--file",
         "-file",
         dest="file",
         metavar="filename",
-        help="Provide a single filename relative to the top inputdata directory",
+        help="Provide a file to import. Must be in the CESM inputdata directory.",
     )
-    group.add_argument(
+
+    parser.add_argument(
         "--list",
         "-list",
         dest="filelist",
         metavar="filelist",
         help=(
             "Provide a file that contains a list of filenames to import. All filenames in the list"
-            "are relative to the top inputdata area."
+            " must be in the CESM inputdata directory."
         ),
     )
 
     parser.add_argument(
-        "--inputdata",
-        "-inputdata",
-        dest="inputdata",
-        metavar="inputdata_dir",
-        default=DEFAULT_INPUTDATA_ROOT,
-        help=(
-            "Change the default local top level inputdata directory."
-            f" Default: '{DEFAULT_INPUTDATA_ROOT}'"
-        ),
+        "items_to_process",
+        nargs="*",
+        help="One or more files to process. (Optional; can use --file instead to process just one.)"
     )
+
+    # Add inputdata_root option flags
+    shared.add_inputdata_root(parser)
 
     parser.add_argument(
         "--check",
@@ -85,14 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check whether file(s) is/are already published.",
     )
 
-    # Provide -help to mirror legacy behavior (in addition to -h and --help)
-    parser.add_argument(
-        "-h",
-        "--help",
-        "-help",
-        action="help",
-        help="Show this help message and exit",
-    )
+    # Add verbosity options
+    shared.add_parser_verbosity_group(parser)
+
+    # Add help text
+    shared.add_help(parser)
 
     return parser
 
@@ -177,7 +177,7 @@ def stage_data(
                 f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
                 f"({staging_root})"
             )
-        print(f"{INDENT}File is already published and linked.")
+        logger.info("%sFile is already published and linked.", INDENT)
         print_can_file_be_downloaded(
             can_file_be_downloaded(src.resolve(), staging_root)
         )
@@ -200,21 +200,19 @@ def stage_data(
     dst = staging_root / rel
 
     if dst.exists():
-        print(f"{INDENT}File is already published but NOT linked; do")
-        print(f"{2*INDENT}relink.py {rel}")
-        print(f"{INDENT}to resolve.")
-        print_can_file_be_downloaded(
-            can_file_be_downloaded(rel, staging_root)
-        )
+        logger.info("%sFile is already published but NOT linked; do", INDENT)
+        logger.info("%srelink.py %s", 2 * INDENT, rel)
+        logger.info("%sto resolve.", INDENT)
+        print_can_file_be_downloaded(can_file_be_downloaded(rel, staging_root))
         return
 
     if check:
-        print(f"{INDENT}File is not already published")
+        logger.info("%sFile is not already published", INDENT)
         return
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
-    print(f"{INDENT}[rimport] staged {src} -> {dst}")
+    logger.info("%s[rimport] staged %s -> %s", INDENT, src, dst)
 
 
 def ensure_running_as(target_user: str, argv: list[str]) -> None:
@@ -237,20 +235,18 @@ def ensure_running_as(target_user: str, argv: list[str]) -> None:
     try:
         target_uid = pwd.getpwnam(target_user).pw_uid
     except KeyError as exc:
-        print(
-            f"rimport: target user '{target_user}' not found on this system",
-            file=sys.stderr,
-        )
+        logger.error("rimport: target user '%s' not found on this system", target_user)
         raise SystemExit(2) from exc
 
     if os.geteuid() != target_uid:
         try:
             assert sys.stdin.isatty()
         except AssertionError as exc:
-            print(
-                f"rimport: need interactive TTY to authenticate as '{target_user}' (2FA).\n"
-                f"         Try: sudo -u {target_user} rimport …",
-                file=sys.stderr,
+            logger.error(
+                "rimport: need interactive TTY to authenticate as '%s' (2FA).\n"
+                "         Try: sudo -u %s rimport …",
+                target_user,
+                target_user,
             )
             raise SystemExit(2) from exc
         # Re-exec under target user; this invokes sudo’s normal password/2FA flow.
@@ -310,9 +306,49 @@ def print_can_file_be_downloaded(file_can_be_downloaded: bool):
         file_can_be_downloaded: Boolean indicating if the file can be downloaded.
     """
     if file_can_be_downloaded:
-        print(f"{INDENT}File is available for download.")
+        logger.info("%sFile is available for download.", INDENT)
     else:
-        print(f"{INDENT}File is not (yet) available for download.")
+        logger.info("%sFile is not (yet) available for download.", INDENT)
+
+
+def get_files_to_process(file: str, filelist: str, items_to_process: list):
+    """Get list of files to process.
+
+    Uses --file and/or --filelist arguments, as well as positional items_to_process if given.
+
+    Args:
+        file (str): Single file to process.
+        filelist (str): File containing list of files to process.
+        items_to_process (list): List of files to process.
+
+    Returns:
+        list: List of files to process
+        int:  Result code
+    """
+    if file is not None:
+        files_to_process = [file]
+    else:
+        files_to_process = []
+
+    if filelist is not None:
+        list_path = Path(filelist).expanduser().resolve()
+        if not list_path.exists():
+            logger.error("rimport: list file not found: %s", list_path)
+            return None, 2
+        files_in_list = read_filelist(list_path)
+        if not files_in_list:
+            logger.error("rimport: no filenames found in list: %s", list_path)
+            return None, 2
+        files_to_process.extend(files_in_list)
+
+    if items_to_process:
+        files_to_process.extend(items_to_process)
+
+    if not files_to_process:
+        logger.error("rimport: At least one of --file or --filelist is required")
+        return None, 2
+
+    return files_to_process, 0
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -340,43 +376,39 @@ def main(argv: List[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # Configure logging based on verbosity flags
+    log_level = shared.get_log_level(quiet=args.quiet, verbose=args.verbose)
+    shared.configure_logging(log_level)
+
     # Ensure we are running as the STAGE_OWNER account before touching the tree
     # Set env var RIMPORT_SKIP_USER_CHECK=1 if you prefer to run `sudox -u STAGE_OWNER rimport …`
     # explicitly (or for testing).
     if not args.check and os.getenv("RIMPORT_SKIP_USER_CHECK") != "1":
         ensure_running_as(STAGE_OWNER, sys.argv)
 
-    root = Path(args.inputdata).expanduser().resolve()
+    root = Path(args.inputdata_root).expanduser().resolve()
     if not root.exists():
-        print(f"rimport: inputdata directory does not exist: {root}", file=sys.stderr)
+        logger.error("rimport: inputdata directory does not exist: %s", root)
         return 2
 
     # Determine the list of relative filenames to handle
-    if args.file is not None:
-        relnames = [args.file]
-    else:
-        list_path = Path(args.filelist).expanduser().resolve()
-        if not list_path.exists():
-            print(f"rimport: list file not found: {list_path}", file=sys.stderr)
-            return 2
-        relnames = read_filelist(list_path)
-        if not relnames:
-            print(f"rimport: no filenames found in list: {list_path}", file=sys.stderr)
-            return 2
+    files_to_process, status = get_files_to_process(args.file, args.filelist, args.items_to_process)
+    if status:
+        return status
 
     # Resolve to full paths (keep accepting absolute names too)
-    paths = normalize_paths(root, relnames)
+    paths = normalize_paths(root, files_to_process)
     staging_root = get_staging_root()
     # Execute the new action per file
     errors = 0
     for p in paths:
-        print(f"'{p}':")
+        logger.info("'%s':", p)
         try:
             stage_data(p, root, staging_root, args.check)
         except Exception as e:  # pylint: disable=broad-exception-caught
             # General Exception keeps CLI robust for batch runs
             errors += 1
-            print(f"{INDENT}rimport: error processing {p}: {e}", file=sys.stderr)
+            logger.error("%srimport: error processing %s: %s", INDENT, p, e)
 
     return 0 if errors == 0 else 1
 

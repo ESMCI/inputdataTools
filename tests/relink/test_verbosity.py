@@ -15,6 +15,8 @@ sys.path.insert(
 # pylint: disable=wrong-import-position
 import relink  # noqa: E402
 
+from shared import INDENT
+
 
 def test_quiet_mode_suppresses_info_messages(temp_dirs, caplog):
     """Test that quiet mode suppresses INFO level messages."""
@@ -45,8 +47,8 @@ def test_quiet_mode_suppresses_info_messages(temp_dirs, caplog):
     assert "Searching for files owned by" not in caplog.text
     assert "Skipping symlink:" not in caplog.text
     assert "Found owned file:" not in caplog.text
-    assert "Deleted original file:" not in caplog.text
-    assert "Created symbolic link:" not in caplog.text
+    assert f"{INDENT}Deleted original file:" not in caplog.text
+    assert f"{INDENT}Created symbolic link:" not in caplog.text
 
 
 def test_quiet_mode_shows_warnings(temp_dirs, caplog):
@@ -66,7 +68,7 @@ def test_quiet_mode_shows_warnings(temp_dirs, caplog):
         )
 
     # Verify WARNING message IS in the log
-    assert "Warning: Corresponding file" in caplog.text
+    assert f"{INDENT}Warning: Corresponding file" in caplog.text
     assert "not found" in caplog.text
 
 
@@ -104,7 +106,7 @@ def test_quiet_mode_shows_errors(temp_dirs, caplog):
             relink.replace_files_with_symlinks(
                 source_dir, target_dir, username, inputdata_root=source_dir
             )
-        assert "Error deleting file" in caplog.text
+        assert f"{INDENT}Error deleting file" in caplog.text
 
     # Clear the log for next test
     caplog.clear()
@@ -126,4 +128,4 @@ def test_quiet_mode_shows_errors(temp_dirs, caplog):
             relink.replace_files_with_symlinks(
                 source_dir, target_dir, username, inputdata_root=source_dir
             )
-        assert "Error creating symlink" in caplog.text
+        assert f"{INDENT}Error creating symlink" in caplog.text

@@ -3,7 +3,6 @@ Tests for ensure_running_as() function in rimport script.
 """
 
 import os
-import sys
 import importlib.util
 from importlib.machinery import SourceFileLoader
 from unittest.mock import patch, MagicMock
@@ -20,7 +19,7 @@ spec = importlib.util.spec_from_loader("rimport", loader)
 if spec is None:
     raise ImportError(f"Could not create spec for rimport from {rimport_path}")
 rimport = importlib.util.module_from_spec(spec)
-sys.modules["rimport"] = rimport
+# Don't add to sys.modules to avoid conflict with other test files
 loader.exec_module(rimport)
 
 
@@ -42,7 +41,9 @@ class TestEnsureRunningAs:
             with patch("sys.stdin.isatty") as mock_isatty:
                 with patch("os.execvp") as mock_execvp:
                     # Should not raise or exec
-                    rimport.ensure_running_as("testuser", ["rimport", "-file", "test.nc"])
+                    rimport.ensure_running_as(
+                        "testuser", ["rimport", "-file", "test.nc"]
+                    )
 
                     # Verify stdin.isatty and os.execvp were NOT called
                     mock_isatty.assert_not_called()
@@ -77,7 +78,7 @@ class TestEnsureRunningAs:
                     assert call_args[1][3] == "--"
                     assert call_args[1][4:] == ["rimport", "-file", "test.nc"]
 
-    def test_error_message_for_nonexistent_user(self, capsys):
+    def test_error_message_for_nonexistent_user(self, caplog):
         """Test that appropriate error message is shown for nonexistent user."""
         # Mock pwd.getpwnam to raise KeyError
         with patch("pwd.getpwnam", side_effect=KeyError("user not found")):
@@ -85,11 +86,10 @@ class TestEnsureRunningAs:
                 rimport.ensure_running_as("baduser", ["rimport", "-file", "test.nc"])
 
             assert exc_info.value.code == 2
-            captured = capsys.readouterr()
-            assert "baduser" in captured.err
-            assert "not found" in captured.err
+            assert "baduser" in caplog.text
+            assert "not found" in caplog.text
 
-    def test_error_message_for_non_interactive(self, capsys):
+    def test_error_message_for_non_interactive(self, caplog):
         """Test that appropriate error message is shown when not interactive."""
         current_uid = os.geteuid()
         different_uid = current_uid + 1000
@@ -108,6 +108,5 @@ class TestEnsureRunningAs:
                     )
 
                 assert exc_info.value.code == 2
-                captured = capsys.readouterr()
-                assert "interactive TTY" in captured.err
-                assert "2FA" in captured.err
+                assert "interactive TTY" in caplog.text
+                assert "2FA" in caplog.text
