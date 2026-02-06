@@ -20,11 +20,11 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 import shared
+INDENT = shared.INDENT
 
 DEFAULT_INPUTDATA_ROOT = Path(shared.DEFAULT_INPUTDATA_ROOT)
 DEFAULT_STAGING_ROOT = Path(shared.DEFAULT_STAGING_ROOT)
 STAGE_OWNER = "cesmdata"
-INDENT = "    "
 INPUTDATA_URL = "https://osdf-data.gdex.ucar.edu/ncar/gdex/d651077/cesmdata/inputdata"
 
 # Configure logging

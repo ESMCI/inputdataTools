@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from shared import INDENT
+
 
 @pytest.fixture(name="mock_dirs")
 def fixture_mock_dirs(tmp_path):
@@ -57,7 +59,7 @@ def test_command_line_execution_dry_run(mock_dirs):
 
     # Verify dry-run messages in output
     assert "DRY RUN MODE" in result.stdout
-    assert "[DRY RUN] Would create symbolic link:" in result.stdout
+    assert f"{INDENT}[DRY RUN] Would create symbolic link:" in result.stdout
 
     # Verify no actual changes were made
     assert source_file.is_file()
@@ -96,7 +98,7 @@ def test_command_line_execution_given_dir(mock_dirs):
     assert os.readlink(str(source_file)) == str(target_file)
 
     # Verify success messages in output
-    assert "Created symbolic link:" in result.stdout
+    assert f"{INDENT}Created symbolic link:" in result.stdout
 
 
 def test_command_line_execution_given_file(mock_dirs):
@@ -131,7 +133,7 @@ def test_command_line_execution_given_file(mock_dirs):
     assert os.readlink(str(source_file)) == str(target_file)
 
     # Verify success messages in output
-    assert "Created symbolic link:" in result.stdout
+    assert f"{INDENT}Created symbolic link:" in result.stdout
 
 
 def test_command_line_multiple_source_dirs(temp_dirs):
