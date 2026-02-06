@@ -47,12 +47,17 @@ class TestBuildParser:
         assert args.filelist == "files.txt"
         assert args.file is None
 
-    @pytest.mark.parametrize("inputdata_flag", ["-inputdata", "-i", "--inputdata", "--inputdata-root", "-inputdata-root"])
+    @pytest.mark.parametrize(
+        "inputdata_flag",
+        ["-inputdata", "-i", "--inputdata", "--inputdata-root", "-inputdata-root"],
+    )
     def test_inputdata_arguments_accepted(self, temp_dirs, inputdata_flag):
         """Test that all inputdata argument flags are accepted."""
         inputdata_root, _ = temp_dirs
         parser = rimport.build_parser()
-        args = parser.parse_args([inputdata_flag, inputdata_root, "-f", "dummy_file.nc"])
+        args = parser.parse_args(
+            [inputdata_flag, inputdata_root, "-f", "dummy_file.nc"]
+        )
         assert args.inputdata_root == inputdata_root
 
     def test_file_and_list_mutually_exclusive(self, capsys):

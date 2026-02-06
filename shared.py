@@ -118,7 +118,10 @@ def add_parser_verbosity_group(parser: argparse.ArgumentParser):
     """
     verbosity_group = parser.add_mutually_exclusive_group()
     verbosity_group.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output (DEBUG level)"
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output (DEBUG level)",
     )
     verbosity_group.add_argument(
         "-q",

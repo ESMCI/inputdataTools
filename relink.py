@@ -20,7 +20,7 @@ from shared import (
     validate_paths,
     validate_directory,
     configure_logging,
-    logger
+    logger,
 )
 
 # Define a custom log level that always prints

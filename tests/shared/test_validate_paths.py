@@ -1,12 +1,14 @@
 """
 Tests for shared.py validate_directory() and validate_paths() functions.
 """
+
 import os
 import argparse
 
 import pytest
 
 import shared
+
 
 class TestValidateDirectory:
     """Test suite for validate_directory function."""

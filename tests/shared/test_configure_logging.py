@@ -71,6 +71,7 @@ class TestConfigureLogging:
         """Test that configure_logging clears any existing handlers."""
         # Add a dummy handler
         from io import StringIO
+
         dummy_handler = logging.StreamHandler(StringIO())
         logger.addHandler(dummy_handler)
         assert len(logger.handlers) >= 1
