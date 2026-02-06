@@ -9,6 +9,8 @@ from importlib.machinery import SourceFileLoader
 
 import pytest
 
+import shared
+
 # Import rimport module from file without .py extension
 rimport_path = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -21,6 +23,18 @@ if spec is None:
 rimport = importlib.util.module_from_spec(spec)
 # Don't add to sys.modules to avoid conflict with other test files
 loader.exec_module(rimport)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def fixture_temp_inputdata(temp_dirs):
+    """
+    Override rimport's DEFAULT_INPUTDATA_ROOT to ensure portability.
+
+    We can't do it in tests/conftest.py's temp_dirs fixture because of how rimport is imported here;
+    we'd get "no module rimport" errors. However, we can use the tempdir that got set up in that
+    fixture.
+    """
+    rimport.DEFAULT_INPUTDATA_ROOT = shared.DEFAULT_INPUTDATA_ROOT
 
 
 class TestBuildParser:
