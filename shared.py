@@ -12,6 +12,8 @@ DEFAULT_STAGING_ROOT = (
     "/glade/campaign/collections/gdex/data/d651077/cesmdata/inputdata/"
 )
 
+logger = logging.getLogger("rimport_relink")
+
 
 def get_log_level(quiet: bool = False, verbose: bool = False) -> int:
     """Determine logging level based on quiet and verbose flags.
@@ -33,7 +35,7 @@ def get_log_level(quiet: bool = False, verbose: bool = False) -> int:
     return logging.INFO
 
 
-def configure_logging(logger, log_level: int) -> None:
+def configure_logging(log_level: int, logger_in: logging.Logger = logger) -> None:
     """Configure logging to send INFO/WARNING to stdout and ERROR/CRITICAL to stderr.
 
     Sets up two handlers:
@@ -44,8 +46,9 @@ def configure_logging(logger, log_level: int) -> None:
 
     Args:
         log_level: Minimum logging level (DEBUG, INFO, or WARNING).
+        logger_in: Logger to operate on. Should only be used in testing.
     """
-    logger.setLevel(log_level)
+    logger_in.setLevel(log_level)
 
     # Handler for INFO, WARNING, and DEBUG level messages -> stdout
     info_handler = logging.StreamHandler(sys.stdout)
@@ -59,9 +62,9 @@ def configure_logging(logger, log_level: int) -> None:
     error_handler.setFormatter(logging.Formatter("%(message)s"))
 
     # Clear any existing handlers and add our custom ones
-    logger.handlers.clear()
-    logger.addHandler(info_handler)
-    logger.addHandler(error_handler)
+    logger_in.handlers.clear()
+    logger_in.addHandler(info_handler)
+    logger_in.addHandler(error_handler)
 
 
 def add_inputdata_root(parser: argparse.ArgumentParser):

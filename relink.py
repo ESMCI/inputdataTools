@@ -20,10 +20,8 @@ from shared import (
     validate_paths,
     validate_directory,
     configure_logging,
+    logger
 )
-
-# Set up logger
-logger = logging.getLogger(__name__)
 
 # Define a custom log level that always prints
 ALWAYS = logging.CRITICAL * 2
@@ -389,7 +387,7 @@ def main():
 
     args = parse_arguments()
 
-    configure_logging(logger, args.log_level)
+    configure_logging(args.log_level)
 
     my_username = os.environ["USER"]
 

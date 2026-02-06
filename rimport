@@ -28,7 +28,7 @@ INDENT = "    "
 INPUTDATA_URL = "https://osdf-data.gdex.ucar.edu/ncar/gdex/d651077/cesmdata/inputdata"
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = shared.logger
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -330,7 +330,7 @@ def main(argv: List[str] | None = None) -> int:
 
     # Configure logging based on verbosity flags
     log_level = shared.get_log_level(quiet=args.quiet, verbose=args.verbose)
-    shared.configure_logging(logger, log_level)
+    shared.configure_logging(log_level)
 
     # Ensure we are running as the STAGE_OWNER account before touching the tree
     # Set env var RIMPORT_SKIP_USER_CHECK=1 if you prefer to run `sudox -u STAGE_OWNER rimport …`
