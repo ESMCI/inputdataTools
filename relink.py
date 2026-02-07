@@ -222,6 +222,7 @@ def replace_files_with_symlinks(
     for file_path in find_owned_files_scandir(
         item_to_process, user_uid, inputdata_root
     ):
+        logger.info("'%s':", file_path)
         replace_one_file_with_symlink(
             inputdata_root, target_dir, file_path, dry_run=dry_run
         )
@@ -238,7 +239,6 @@ def replace_one_file_with_symlink(inputdata_root, target_dir, file_path, dry_run
         file_path (str): The path of the file to be replaced.
         dry_run (bool): If True, only show what would be done without making changes.
     """
-    logger.info("'%s':", file_path)
 
     # Determine the relative path and the new link's destination
     relative_path = os.path.relpath(file_path, inputdata_root)
@@ -270,7 +270,9 @@ def replace_one_file_with_symlink(inputdata_root, target_dir, file_path, dry_run
         os.rename(link_name, link_name + ".tmp")
         logger.info("%sDeleted original file: %s", INDENT, link_name)
     except OSError as e:
-        logger.error("%sError deleting file %s: %s. Skipping.", INDENT, link_name, e)
+        logger.error(
+            "%sError deleting file %s: %s. Skipping relink.", INDENT, link_name, e
+        )
         return
 
     # Create the symbolic link, handling necessary parent directories
@@ -283,7 +285,10 @@ def replace_one_file_with_symlink(inputdata_root, target_dir, file_path, dry_run
     except OSError as e:
         os.rename(link_name + ".tmp", link_name)
         logger.error(
-            "%sError creating symlink for %s: %s. Skipping.", INDENT, link_name, e
+            "%sError creating symlink for %s: %s. Skipping relink.",
+            INDENT,
+            link_name,
+            e,
         )
 
 

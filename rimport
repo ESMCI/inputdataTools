@@ -2,14 +2,14 @@
 # TODO: Move all the Python into new file rimport.py for simpler testing. Keep rimport as a
 # convenience wrapper.
 """
-Copy files from CESM inputdata directory to a publishing directory.
+Copy files from CESM inputdata directory to a publishing directory, then replace the original with a
+symlink to the copy.
 
 Do `rimport --help` for more information.
 """
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import pwd
 import shutil
@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Iterable, List
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+
+from relink import replace_one_file_with_symlink
 
 import shared
 INDENT = shared.INDENT
@@ -34,20 +36,13 @@ logger = shared.logger
 def build_parser() -> argparse.ArgumentParser:
     """Build and configure the argument parser for rimport.
 
-    Creates an ArgumentParser with the following options:
-    - Mutually exclusive required group:
-        --file: Import a single file (relative to inputdata directory)
-        --list: Import multiple files from a list file
-    - Optional:
-        --inputdata: Override the default inputdata directory
-
     Returns:
         argparse.ArgumentParser: Configured parser ready to parse command-line arguments.
     """
     parser = argparse.ArgumentParser(
         description=(
             f"Copy files from CESM inputdata directory ({DEFAULT_INPUTDATA_ROOT}) to a publishing"
-            " directory."
+            " directory, then replace the original with a symlink to the copy."
         ),
         add_help=False,  # Disable automatic help to add custom -help flag
     )
@@ -144,10 +139,24 @@ def normalize_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
     return paths
 
 
+def check_relink_worked(src: Path, dst: Path) -> None:
+    """Check whether relink worked
+
+    Args:
+        src (Path): Source file (should have been converted to symlink)
+        dst (Path): Destination file (symlink target)
+
+    Raises:
+        RuntimeError: If src is not a symlink pointing to dst.
+    """
+    if not (src.is_symlink() and src.resolve() == dst):
+        raise RuntimeError("Error relinking during rimport")
+
+
 def stage_data(
     src: Path, inputdata_root: Path, staging_root: Path, check: bool = False
 ) -> None:
-    """Stage a file by mirroring its path under `staging_root`.
+    """Stage a file by mirroring its path under `staging_root`, then replace with symlink to staged.
 
     Destination path is computed by replacing the `inputdata_root` prefix of `src`
     with `staging_root`, i.e.:
@@ -163,6 +172,7 @@ def stage_data(
         RuntimeError: If `src` is a live symlink pointing outside staging, or if `src` is outside
                       the inputdata root, or if `src` is already under staging directory.
         RuntimeError: If `src` is a broken symlink.
+        RuntimeError: If it failed to replace `src` with a symlink to the staged file.
         FileNotFoundError: If `src` does not exist.
 
     Guardrails:
@@ -200,19 +210,24 @@ def stage_data(
     dst = staging_root / rel
 
     if dst.exists():
-        logger.info("%sFile is already published but NOT linked; do", INDENT)
-        logger.info("%srelink.py %s", 2 * INDENT, rel)
-        logger.info("%sto resolve.", INDENT)
+        logger.info("File is already published but NOT linked; linking now.")
+        replace_one_file_with_symlink(inputdata_root, staging_root, str(src))
         print_can_file_be_downloaded(can_file_be_downloaded(rel, staging_root))
+        check_relink_worked(src, dst)
         return
 
     if check:
         logger.info("%sFile is not already published", INDENT)
         return
 
+    # Copy file to destination
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     logger.info("%s[rimport] staged %s -> %s", INDENT, src, dst)
+
+    # Replace original with symlink to destination
+    replace_one_file_with_symlink(inputdata_root, staging_root, str(src))
+    check_relink_worked(src, dst)
 
 
 def ensure_running_as(target_user: str, argv: list[str]) -> None:
@@ -354,7 +369,7 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
 def main(argv: List[str] | None = None) -> int:
     """Main entry point for the rimport tool.
 
-    Copies files from the CESM inputdata directory to a staging/publishing directory,
+    Copies and relinks files from the CESM inputdata directory to a staging/publishing directory,
     preserving the directory structure. Ensures the script runs as the correct user
     (STAGE_OWNER) and handles both single files and file lists.
 
@@ -370,7 +385,7 @@ def main(argv: List[str] | None = None) -> int:
 
     Exit Codes:
         0: All files staged successfully.
-        1: One or more files failed to stage (errors printed to stderr).
+        1: One or more files failed to stage or relink (errors printed to stderr).
         2: Fatal error (missing inputdata directory, missing file list, etc.).
     """
     parser = build_parser()
@@ -410,7 +425,11 @@ def main(argv: List[str] | None = None) -> int:
             errors += 1
             logger.error("%srimport: error processing %s: %s", INDENT, p, e)
 
-    return 0 if errors == 0 else 1
+    if errors:
+        return 1
+    if not args.check:
+        logger.info("\nNo need to run relink.py")
+    return 0
 
 
 if __name__ == "__main__":

@@ -12,12 +12,23 @@ import logging
 from unittest.mock import patch, call
 import pytest
 
+import shared
+
 # Add parent directory to path to import relink module
 sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 # pylint: disable=wrong-import-position
 import relink  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def configure_logging_for_tests():
+    """Configure logging for all tests in this module."""
+    shared.configure_logging(logging.INFO)
+    yield
+    # Cleanup
+    relink.logger.handlers.clear()
 
 
 @pytest.fixture(name="mock_replace_one")
@@ -27,7 +38,9 @@ def fixture_mock_replace_one():
         yield mock
 
 
-def test_basic_file_replacement_given_dir(temp_dirs, current_user, mock_replace_one):
+def test_basic_file_replacement_given_dir(
+    temp_dirs, current_user, mock_replace_one, caplog
+):
     """Test basic functionality: given directory, replace owned file with symlink."""
     inputdata_root, target_dir = temp_dirs
     username = current_user
@@ -55,8 +68,13 @@ def test_basic_file_replacement_given_dir(temp_dirs, current_user, mock_replace_
         dry_run=False,
     )
 
+    # Verify message with filename was printed
+    assert f"'{source_file}':" in caplog.text
 
-def test_basic_file_replacement_given_file(temp_dirs, current_user, mock_replace_one):
+
+def test_basic_file_replacement_given_file(
+    temp_dirs, current_user, mock_replace_one, caplog
+):
     """Test basic functionality: given owned file, replace with symlink."""
     inputdata_root, target_dir = temp_dirs
     username = current_user
@@ -84,8 +102,11 @@ def test_basic_file_replacement_given_file(temp_dirs, current_user, mock_replace
         dry_run=False,
     )
 
+    # Verify message with filename was printed
+    assert f"'{source_file}':" in caplog.text
 
-def test_dry_run(temp_dirs, current_user, mock_replace_one):
+
+def test_dry_run(temp_dirs, current_user, mock_replace_one, caplog):
     """Test that dry_run=True is passed correctly."""
     inputdata_root, target_dir = temp_dirs
     username = current_user
@@ -116,6 +137,9 @@ def test_dry_run(temp_dirs, current_user, mock_replace_one):
         source_file,
         dry_run=True,
     )
+
+    # Verify message with filename was printed
+    assert f"'{source_file}':" in caplog.text
 
 
 def test_nested_directory_structure(temp_dirs, current_user, mock_replace_one):
@@ -175,6 +199,9 @@ def test_skip_existing_symlinks(temp_dirs, current_user, caplog, mock_replace_on
     # Verify replace_one_file_with_symlink() wasn't called
     mock_replace_one.assert_not_called()
 
+    # Verify message with filename was NOT printed
+    assert f"'{source_link}':" not in caplog.text
+
 
 def test_missing_target_file(temp_dirs, current_user, caplog, mock_replace_one):
     """Test behavior when target file doesn't exist."""
@@ -224,7 +251,7 @@ def test_invalid_username(temp_dirs, caplog, mock_replace_one):
     mock_replace_one.assert_not_called()
 
 
-def test_multiple_files(temp_dirs, current_user, mock_replace_one):
+def test_multiple_files(temp_dirs, current_user, mock_replace_one, caplog):
     """Test with multiple files in the directory."""
     inputdata_root, target_dir = temp_dirs
     username = current_user
@@ -250,6 +277,11 @@ def test_multiple_files(temp_dirs, current_user, mock_replace_one):
         source_file = os.path.join(inputdata_root, f"file_{i}.txt")
         calls.append(call(inputdata_root, target_dir, source_file, dry_run=False))
     mock_replace_one.assert_has_calls(calls, any_order=True)
+
+    # Verify message with filename was printed
+    for i in range(5):
+        source_file = os.path.join(inputdata_root, f"file_{i}.txt")
+        assert f"'{source_file}':" in caplog.text
 
 
 def test_multiple_files_nested(temp_dirs, current_user, mock_replace_one):

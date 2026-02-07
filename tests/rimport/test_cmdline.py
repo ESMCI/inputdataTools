@@ -82,6 +82,10 @@ class TestRimportCommandLine:
         assert staged_file.exists()
         assert staged_file.read_text() == "test data"
 
+        # Verify file was relinked
+        assert test_file.is_symlink()
+        assert test_file.resolve() == staged_file
+
     def test_list_option_stages_multiple_files(
         self, rimport_script, test_env, rimport_env
     ):
@@ -127,6 +131,12 @@ class TestRimportCommandLine:
         assert (staging_root / "file1.nc").read_text() == "data1"
         assert (staging_root / "file2.nc").read_text() == "data2"
 
+        # Verify both files were relinked
+        assert file1.is_symlink()
+        assert file1.resolve() == (staging_root / "file1.nc")
+        assert file2.is_symlink()
+        assert file2.resolve() == (staging_root / "file2.nc")
+
     def test_preserves_directory_structure(self, rimport_script, test_env, rimport_env):
         """Test that directory structure is preserved in staging."""
         inputdata_root = test_env["inputdata_root"]
@@ -162,6 +172,10 @@ class TestRimportCommandLine:
         staged_file = staging_root / "dir1" / "dir2" / "file.nc"
         assert staged_file.exists()
         assert staged_file.read_text() == "nested data"
+
+        # Verify file was relinked
+        assert nested_file.is_symlink()
+        assert nested_file.resolve() == staged_file
 
     def test_error_for_nonexistent_file(self, rimport_script, test_env, rimport_env):
         """Test that error is reported for nonexistent file."""
@@ -307,6 +321,12 @@ class TestRimportCommandLine:
         # Verify both files were staged
         assert (staging_root / "file1.nc").exists()
         assert (staging_root / "file2.nc").exists()
+
+        # Verify both files were relinked
+        assert file1.is_symlink()
+        assert file1.resolve() == (staging_root / "file1.nc")
+        assert file2.is_symlink()
+        assert file2.resolve() == (staging_root / "file2.nc")
 
     def test_prints_and_exits_for_already_published_linked_file(
         self, rimport_script, test_env, rimport_env
@@ -472,6 +492,9 @@ class TestRimportCommandLine:
         # Verify file was not staged
         staged_file = staging_root / "test.nc"
         assert not staged_file.exists()
+
+        # Verify file was not replaced with a symlink
+        assert not test_file.is_symlink()
 
         # Verify message was printed
         assert "not already published" in result.stdout
