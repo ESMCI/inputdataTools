@@ -2,7 +2,8 @@
 # TODO: Move all the Python into new file rimport.py for simpler testing. Keep rimport as a
 # convenience wrapper.
 """
-Copy files from CESM inputdata directory to a publishing directory.
+Copy files from CESM inputdata directory to a publishing directory, then replace the original with a
+symlink to the copy.
 
 Do `rimport --help` for more information.
 """
@@ -34,13 +35,6 @@ logger = shared.logger
 
 def build_parser() -> argparse.ArgumentParser:
     """Build and configure the argument parser for rimport.
-
-    Creates an ArgumentParser with the following options:
-    - Mutually exclusive required group:
-        --file: Import a single file (relative to inputdata directory)
-        --list: Import multiple files from a list file
-    - Optional:
-        --inputdata: Override the default inputdata directory
 
     Returns:
         argparse.ArgumentParser: Configured parser ready to parse command-line arguments.
@@ -375,7 +369,7 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
 def main(argv: List[str] | None = None) -> int:
     """Main entry point for the rimport tool.
 
-    Copies files from the CESM inputdata directory to a staging/publishing directory,
+    Copies and relinks files from the CESM inputdata directory to a staging/publishing directory,
     preserving the directory structure. Ensures the script runs as the correct user
     (STAGE_OWNER) and handles both single files and file lists.
 
@@ -391,7 +385,7 @@ def main(argv: List[str] | None = None) -> int:
 
     Exit Codes:
         0: All files staged successfully.
-        1: One or more files failed to stage (errors printed to stderr).
+        1: One or more files failed to stage or relink (errors printed to stderr).
         2: Fatal error (missing inputdata directory, missing file list, etc.).
     """
     parser = build_parser()
