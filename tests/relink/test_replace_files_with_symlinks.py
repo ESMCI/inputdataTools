@@ -38,7 +38,9 @@ def fixture_mock_replace_one():
         yield mock
 
 
-def test_basic_file_replacement_given_dir(temp_dirs, current_user, mock_replace_one, caplog):
+def test_basic_file_replacement_given_dir(
+    temp_dirs, current_user, mock_replace_one, caplog
+):
     """Test basic functionality: given directory, replace owned file with symlink."""
     inputdata_root, target_dir = temp_dirs
     username = current_user
@@ -70,7 +72,9 @@ def test_basic_file_replacement_given_dir(temp_dirs, current_user, mock_replace_
     assert f"'{source_file}':" in caplog.text
 
 
-def test_basic_file_replacement_given_file(temp_dirs, current_user, mock_replace_one, caplog):
+def test_basic_file_replacement_given_file(
+    temp_dirs, current_user, mock_replace_one, caplog
+):
     """Test basic functionality: given owned file, replace with symlink."""
     inputdata_root, target_dir = temp_dirs
     username = current_user

@@ -22,6 +22,7 @@ rimport = importlib.util.module_from_spec(spec)
 # Don't add to sys.modules to avoid conflict with other test files
 loader.exec_module(rimport)
 
+
 def test_ok(tmp_path):
     """Check that it doesn't error if src is a symlink pointing to dst"""
     # Set up
@@ -31,6 +32,7 @@ def test_ok(tmp_path):
 
     # Shouldn't error
     rimport.check_relink_worked(src, dst)
+
 
 def test_error_not_symlink(tmp_path):
     """Check that it does error if src isn't a symlink"""
@@ -44,6 +46,7 @@ def test_error_not_symlink(tmp_path):
 
     # Verify error message was printed
     assert "Error relinking during rimport" in str(exc_info.value)
+
 
 def test_error_symlink_but_not_to_dst(tmp_path):
     """Check that it does error if src is a symlink but not pointing to dst"""
