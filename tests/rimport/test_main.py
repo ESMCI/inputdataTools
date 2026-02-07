@@ -60,8 +60,9 @@ class TestMain:
         # Verify
         assert result == 0
         mock_normalize_paths.assert_called_once_with(inputdata_root, ["test.nc"])
+        check = False
         mock_stage_data.assert_called_once_with(
-            test_file, inputdata_root, staging_root, False
+            test_file, inputdata_root, staging_root, check
         )
         assert "No need to run relink.py" in caplog.text
 
@@ -106,10 +107,11 @@ class TestMain:
             inputdata_root, ["file1.nc", "file2.nc"]
         )
         assert mock_stage_data.call_count == 2
+        check = False
         mock_stage_data.assert_has_calls(
             [
-                call(file1, inputdata_root, staging_root, False),
-                call(file2, inputdata_root, staging_root, False),
+                call(file1, inputdata_root, staging_root, check),
+                call(file2, inputdata_root, staging_root, check),
             ]
         )
 
@@ -252,8 +254,9 @@ class TestMain:
         # ensure_running_as should NOT be called in check mode
         mock_ensure_running_as.assert_not_called()
         # stage_data should be called with check=True
+        check = True
         mock_stage_data.assert_called_once_with(
-            test_file, inputdata_root, staging_root, True
+            test_file, inputdata_root, staging_root, check
         )
         # Message about relink.py should not have been printed
         assert "No need to run relink.py" not in caplog.text
