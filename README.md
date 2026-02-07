@@ -7,7 +7,9 @@ Tools used for publishing CESM input data.
 3. Once that's done, `rimport` will replace the original with a link to the copy.
 4. Sometime in the next 24 hours, your file should be uploaded to the GDEX server and available for download during CESM runs.
 
-The `relink.py` script was previously used for step 3 above, but that functionality is now built into `rimport`. It's still there if you want to use it by itself.
+Notes:
+- Use `rimport --check` if you'd like to see the current status of a file, including whether it's available for download.
+- The `relink.py` script was previously used for step 3 above, but that functionality is now built into `rimport`. It's still there if you want to use it by itself.
 
 ## Filenames and metadata:
 
