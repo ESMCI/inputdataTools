@@ -118,7 +118,7 @@ def test_absolute_paths(temp_dirs):
         os.chdir(cwd)
 
 
-def test_print_found_owned_file(temp_dirs, caplog):
+def test_no_print_found_owned_file(temp_dirs, caplog):
     """Test that message with filename is printed."""
     source_dir, target_dir = temp_dirs
 
@@ -135,9 +135,8 @@ def test_print_found_owned_file(temp_dirs, caplog):
     with caplog.at_level(logging.INFO):
         relink.replace_one_file_with_symlink(source_dir, target_dir, source_file)
 
-    # Check that message was logged
-    assert f"'{source_file}':" in caplog.text
-    assert source_file in caplog.text
+    # Check that message was NOT logged (should happen in replace_files_with_symlinks instead)
+    assert f"'{source_file}':" not in caplog.text
 
 
 def test_print_deleted_and_created_messages(temp_dirs, caplog):

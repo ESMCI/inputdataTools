@@ -68,6 +68,10 @@ class TestStageData:
         assert dst.exists()
         assert dst.read_text() == "data content"
 
+        # Verify original was replaced with symlink
+        assert src.is_symlink()
+        assert src.resolve() == dst
+
     def test_check_doesnt_copy(self, inputdata_root, staging_root, caplog):
         """Test that a file is NOT copied to the staging directory if check is True"""
         # Create file in inputdata root
@@ -80,6 +84,7 @@ class TestStageData:
         # Verify file was NOT copied to staging
         dst = staging_root / "file.nc"
         assert not dst.exists()
+        assert not src.is_symlink()
 
         # Verify message was logged
         assert "not already published" in caplog.text
@@ -98,6 +103,10 @@ class TestStageData:
         dst = staging_root / "dir1" / "dir2" / "file.nc"
         assert dst.exists()
         assert dst.read_text() == "nested data"
+
+        # Verify original was replaced with symlink
+        assert src.is_symlink()
+        assert src.resolve() == dst
 
     def test_prints_live_symlink_already_published_not_downloadable(
         self, inputdata_root, staging_root, caplog
@@ -195,10 +204,14 @@ class TestStageData:
         # Verify the right messages were logged or not
         msg = "File is already published and linked"
         assert msg not in caplog.text
-        msg = "File is already published but NOT linked; do"
+        msg = "File is already published but NOT linked; linking"
         assert msg in caplog.text
         msg = "File is available for download"
         assert msg in caplog.text
+
+        # Verify the file got linked
+        assert inputdata.is_symlink()
+        assert inputdata.resolve() == staged
 
     def test_raises_error_for_live_symlink_pointing_somewhere_other_than_staging(
         self, tmp_path, inputdata_root, staging_root
@@ -301,6 +314,10 @@ class TestStageData:
         assert dst_stat.st_mtime == src_stat.st_mtime
         assert dst_stat.st_mode == src_stat.st_mode
 
+        # Verify the file got linked
+        assert src.is_symlink()
+        assert src.resolve() == dst
+
     def test_handles_files_with_spaces(self, inputdata_root, staging_root):
         """Test handling files with spaces in names."""
         # Create file with spaces in inputdata root
@@ -315,6 +332,10 @@ class TestStageData:
         assert dst.exists()
         assert dst.read_text() == "data"
 
+        # Verify the file got linked
+        assert src.is_symlink()
+        assert src.resolve() == dst
+
     def test_handles_files_with_special_characters(self, inputdata_root, staging_root):
         """Test handling files with special characters."""
         # Create file with special chars in inputdata root
@@ -328,3 +349,65 @@ class TestStageData:
         dst = staging_root / "file-name_123@test.nc"
         assert dst.exists()
         assert dst.read_text() == "data"
+
+        # Verify the file got linked
+        assert src.is_symlink()
+        assert src.resolve() == dst
+
+    @patch.object(rimport, "replace_one_file_with_symlink")
+    def test_not_already_published_errors_if_relink_fails(
+        self, _mock_replace_one_file_with_symlink, inputdata_root, staging_root
+    ):
+        """
+        Test that it errors if, after publishing, replace_one_file_with_symlink() doesn't make the
+        symlink.
+        """
+        # Create file in inputdata root
+        src = inputdata_root / "file.nc"
+        src.write_text("data content")
+
+        assert not inputdata_root.is_symlink()
+        assert not src.is_symlink()
+        dst = staging_root / "file.nc"
+        assert not dst.exists()
+
+        # Stage the file but expect failure during relink check
+        with pytest.raises(RuntimeError) as exc_info:
+            rimport.stage_data(src, inputdata_root, staging_root)
+
+        # Verify file was copied to staging
+        assert dst.exists()
+        assert dst.read_text() == "data content"
+
+        # Verify error message was printed
+        assert "Error relinking during rimport" in str(exc_info.value)
+
+    @patch.object(rimport, "can_file_be_downloaded")
+    @patch.object(rimport, "replace_one_file_with_symlink")
+    def test_already_published_errors_if_relink_fails(
+        self,
+        _mock_replace_one_file_with_symlink,
+        mock_can_file_be_downloaded,
+        inputdata_root,
+        staging_root,
+    ):
+        """
+        Test that it errors if, for an already-published file, replace_one_file_with_symlink()
+        doesn't make the symlink.
+        """
+        # Create a real file in staging AND in inputdata
+        filename = "real_file.nc"
+        staged = staging_root / filename
+        staged.write_text("data")
+        inputdata = inputdata_root / filename
+        inputdata.write_text("data")
+
+        # Mock can_file_be_downloaded to return True
+        mock_can_file_be_downloaded.return_value = True
+
+        # Expect failure during relink check
+        with pytest.raises(RuntimeError) as exc_info:
+            rimport.stage_data(inputdata, inputdata_root, staging_root)
+
+        # Verify error message was printed
+        assert "Error relinking during rimport" in str(exc_info.value)

@@ -41,6 +41,7 @@ class TestMain:
         mock_get_staging_root,
         mock_stage_data,
         tmp_path,
+        caplog,
     ):
         """Test main() logic flow when a single file stages successfully."""
         # Setup
@@ -59,9 +60,11 @@ class TestMain:
         # Verify
         assert result == 0
         mock_normalize_paths.assert_called_once_with(inputdata_root, ["test.nc"])
+        check = False
         mock_stage_data.assert_called_once_with(
-            test_file, inputdata_root, staging_root, False
+            test_file, inputdata_root, staging_root, check
         )
+        assert "No need to run relink.py" in caplog.text
 
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
@@ -104,10 +107,11 @@ class TestMain:
             inputdata_root, ["file1.nc", "file2.nc"]
         )
         assert mock_stage_data.call_count == 2
+        check = False
         mock_stage_data.assert_has_calls(
             [
-                call(file1, inputdata_root, staging_root, False),
-                call(file2, inputdata_root, staging_root, False),
+                call(file1, inputdata_root, staging_root, check),
+                call(file2, inputdata_root, staging_root, check),
             ]
         )
 
@@ -152,6 +156,10 @@ class TestMain:
         captured = capsys.readouterr()
         assert "error processing" in captured.err
         assert "Test error for file2" in captured.err
+
+        # Check that message about not needing to run relink was NOT printed
+        assert "No need to run relink.py" not in captured.err
+        assert "No need to run relink.py" not in captured.out
 
     @patch.object(rimport, "ensure_running_as")
     def test_nonexistent_inputdata_directory(
@@ -226,6 +234,7 @@ class TestMain:
         mock_get_staging_root,
         mock_stage_data,
         tmp_path,
+        caplog,
     ):
         """Test that --check mode skips the user check but does call stage_data."""
         inputdata_root = tmp_path / "inputdata"
@@ -245,9 +254,12 @@ class TestMain:
         # ensure_running_as should NOT be called in check mode
         mock_ensure_running_as.assert_not_called()
         # stage_data should be called with check=True
+        check = True
         mock_stage_data.assert_called_once_with(
-            test_file, inputdata_root, staging_root, True
+            test_file, inputdata_root, staging_root, check
         )
+        # Message about relink.py should not have been printed
+        assert "No need to run relink.py" not in caplog.text
 
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
@@ -367,3 +379,81 @@ class TestMain:
         captured = capsys.readouterr()
         # Should have 2 error messages
         assert captured.err.count("error processing") == 2
+
+    @patch.object(rimport, "replace_one_file_with_symlink")
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "normalize_paths")
+    @patch.object(rimport, "ensure_running_as")
+    def test_error_if_file_already_published_but_relink_fails(
+        self,
+        _mock_ensure_running_as,
+        mock_normalize_paths,
+        mock_get_staging_root,
+        _mock_replace_one_file_with_symlink,
+        tmp_path,
+        capsys,
+    ):
+        """
+        Test that main() returns error code 1 if attempting to relink an already-published file
+        fails.
+        """
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+
+        filename = "test.nc"
+        src = inputdata_root / filename
+        src.write_text("some data")
+        assert src.exists()
+        dst = staging_root / filename
+        dst.write_text("some data")
+
+        mock_get_staging_root.return_value = staging_root
+        test_file = inputdata_root / filename
+        mock_normalize_paths.return_value = [test_file]
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(src)])
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "rimport: error processing" in captured.err
+        assert "Error relinking during rimport" in captured.err
+
+    @patch.object(rimport, "replace_one_file_with_symlink")
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "normalize_paths")
+    @patch.object(rimport, "ensure_running_as")
+    def test_error_if_file_newly_published_but_relink_fails(
+        self,
+        _mock_ensure_running_as,
+        mock_normalize_paths,
+        mock_get_staging_root,
+        _mock_replace_one_file_with_symlink,
+        tmp_path,
+        capsys,
+    ):
+        """
+        Test that main() returns error code 1 if attempting to relink a newly-published file
+        fails.
+        """
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+
+        filename = "test.nc"
+        src = inputdata_root / filename
+        src.write_text("some data")
+        assert src.exists()
+
+        mock_get_staging_root.return_value = staging_root
+        test_file = inputdata_root / filename
+        mock_normalize_paths.return_value = [test_file]
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(src)])
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "rimport: error processing" in captured.err
+        assert "Error relinking during rimport" in captured.err
