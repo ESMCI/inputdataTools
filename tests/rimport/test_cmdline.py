@@ -455,13 +455,14 @@ class TestRimportCommandLine:
         msg = "is outside staging directory"
         assert msg in result.stderr
 
-    def test_check_doesnt_copy(self, rimport_script, test_env, rimport_env):
-        """Test that a file is NOT copied to the staging directory if check is True."""
+    def test_check_doesnt_copy_unpublished(self, rimport_script, test_env, rimport_env):
+        """Test that an unpublished file is not copied to the staging directory if check is True."""
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
 
         # Create a file in inputdata
-        test_file = inputdata_root / "test.nc"
+        file_basename = "test.nc"
+        test_file = inputdata_root / file_basename
         test_file.write_text("test data")
 
         # Make sure --check skips ensure_running_as()
@@ -472,7 +473,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            "test.nc",
+            file_basename,
             "-inputdata",
             str(inputdata_root),
             "--check",
@@ -490,7 +491,7 @@ class TestRimportCommandLine:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Verify file was not staged
-        staged_file = staging_root / "test.nc"
+        staged_file = staging_root / file_basename
         assert not staged_file.exists()
 
         # Verify file was not replaced with a symlink
@@ -498,3 +499,58 @@ class TestRimportCommandLine:
 
         # Verify message was printed
         assert "not already published" in result.stdout
+
+        # Verify messages weren't printed
+        assert "already published but NOT linked".lower() not in result.stdout.lower()
+        assert "Deleted original file".lower() not in result.stdout.lower()
+        assert "Created symbolic link".lower() not in result.stdout.lower()
+        assert "Error creating symlink".lower() not in result.stdout.lower()
+
+    def test_check_doesnt_relink_published(self, rimport_script, test_env, rimport_env):
+        """Test that published file is not relinked if check is True."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        # Create a file in inputdata and staging
+        file_basename = "test.nc"
+        test_file = inputdata_root / file_basename
+        test_file.write_text("test data")
+        staged_file = staging_root / file_basename
+        staged_file.write_text("test data")
+
+        # Make sure --check skips ensure_running_as()
+        del rimport_env["RIMPORT_SKIP_USER_CHECK"]
+
+        # Run rimport with --check option
+        command = [
+            sys.executable,
+            rimport_script,
+            "-file",
+            file_basename,
+            "-inputdata",
+            str(inputdata_root),
+            "--check",
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify success
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Verify file was not replaced with a symlink
+        assert not test_file.is_symlink()
+
+        # Verify message was printed
+        assert "already published but NOT linked".lower() in result.stdout.lower()
+
+        # Verify messages weren't printed
+        assert "linking now".lower() not in result.stdout.lower()
+        assert "Deleted original file".lower() not in result.stdout.lower()
+        assert "Created symbolic link".lower() not in result.stdout.lower()
+        assert "Error creating symlink".lower() not in result.stdout.lower()
