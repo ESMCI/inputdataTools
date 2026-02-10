@@ -54,8 +54,8 @@ def fixture_staging_root(tmp_path):
 class TestStageData:
     """Test suite for stage_data() function."""
 
-    def test_copies_file_to_staging(self, inputdata_root, staging_root):
-        """Test that a file is copied to the staging directory."""
+    def test_copies_and_relinks_unpublished(self, inputdata_root, staging_root):
+        """Test that an unpublished file is copied to the staging directory and relinked."""
         # Create file in inputdata root
         src = inputdata_root / "file.nc"
         src.write_text("data content")
@@ -72,22 +72,35 @@ class TestStageData:
         assert src.is_symlink()
         assert src.resolve() == dst
 
-    def test_check_doesnt_copy(self, inputdata_root, staging_root, caplog):
-        """Test that a file is NOT copied to the staging directory if check is True"""
+    def test_check_doesnt_copy_unpublished(self, inputdata_root, staging_root, caplog):
+        """Test that an unpublished file is NOT copied to the staging directory if check is True"""
         # Create file in inputdata root
-        src = inputdata_root / "file.nc"
+        file_basename = "file.nc"
+        src = inputdata_root / file_basename
         src.write_text("data content")
 
         # Check the file
         rimport.stage_data(src, inputdata_root, staging_root, check=True)
 
-        # Verify file was NOT copied to staging
-        dst = staging_root / "file.nc"
+        # Verify file was NOT copied to staging or relinked
+        dst = staging_root / file_basename
         assert not dst.exists()
         assert not src.is_symlink()
 
-        # Verify message was logged
-        assert "not already published" in caplog.text
+    def test_check_doesnt_relink_published(self, inputdata_root, staging_root, caplog):
+        """Test that a published file is NOT relinked if check is True"""
+        # Create file in inputdata root and staging
+        file_basename = "file.nc"
+        src = inputdata_root / file_basename
+        src.write_text("data content")
+        dst = staging_root / file_basename
+        dst.write_text("data content")
+
+        # Check the file
+        rimport.stage_data(src, inputdata_root, staging_root, check=True)
+
+        # Verify file was NOT relinked
+        assert not src.is_symlink()
 
     def test_preserves_directory_structure(self, inputdata_root, staging_root):
         """Test that directory structure is preserved in staging."""

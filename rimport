@@ -210,10 +210,15 @@ def stage_data(
     dst = staging_root / rel
 
     if dst.exists():
-        logger.info("File is already published but NOT linked; linking now.")
-        replace_one_file_with_symlink(inputdata_root, staging_root, str(src))
-        print_can_file_be_downloaded(can_file_be_downloaded(rel, staging_root))
-        check_relink_worked(src, dst)
+        msg = "File is already published but NOT linked"
+        if check:
+            logger.info("%s; would link.", msg)
+            print_can_file_be_downloaded(can_file_be_downloaded(rel, staging_root))
+        else:
+            logger.info("%s; linking now.", msg)
+            replace_one_file_with_symlink(inputdata_root, staging_root, str(src))
+            check_relink_worked(src, dst)
+            print_can_file_be_downloaded(can_file_be_downloaded(rel, staging_root))
         return
 
     if check:

@@ -43,23 +43,26 @@ class TestCanFileBeDownloaded:
     def test_true_abspath(self):
         """Test that can_file_be_downloaded() is true for an existing file given absolute path"""
         file_abspath = Path(os.path.join(DEFAULT_STAGING_ROOT, RELPATH_THAT_DOES_EXIST))
-        assert rimport.can_file_be_downloaded(
+        result = rimport.can_file_be_downloaded(
             file_abspath,
             DEFAULT_STAGING_ROOT,
         )
+        assert result, f"Maybe the server is down? Try again. Result was: {result}"
 
     def test_true_relpath(self):
         """Test that can_file_be_downloaded() is true for an existing file given relative path"""
         file_relpath = Path(RELPATH_THAT_DOES_EXIST)
-        assert rimport.can_file_be_downloaded(
+        result = rimport.can_file_be_downloaded(
             file_relpath,
             DEFAULT_STAGING_ROOT,
         )
+        assert result, f"Maybe the server is down? Try again. Result was: {result}"
 
     def test_false_nonexistent(self):
         """Test that can_file_be_downloaded() is false for a nonexistent file"""
         file_relpath = Path("weurueridniduafnea/smfnigsroerij/msdif8ernnr.nc")
-        assert not rimport.can_file_be_downloaded(
+        result = rimport.can_file_be_downloaded(
             file_relpath,
             DEFAULT_STAGING_ROOT,
         )
+        assert not result, f"Unexpected result: {result}"
