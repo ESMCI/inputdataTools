@@ -52,7 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         "-file",
         dest="file",
         metavar="filename",
-        help="Provide a file to import. Must be in the CESM inputdata directory.",
+        help=(
+            "Provide a file to import. Must be in the CESM inputdata directory. Relative names are"
+            " resolved against the current directory when run from inside the inputdata tree;"
+            " otherwise against the inputdata root."
+        ),
     )
 
     parser.add_argument(
@@ -62,14 +66,20 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="filelist",
         help=(
             "Provide a file that contains a list of filenames to import. All filenames in the list"
-            " must be in the CESM inputdata directory."
+            " must be in the CESM inputdata directory. Relative entries are resolved against the"
+            " list file's directory; if the list file is outside the inputdata tree, entries must"
+            " be absolute."
         ),
     )
 
     parser.add_argument(
         "items_to_process",
         nargs="*",
-        help="One or more files to process. (Optional; can use --file instead to process just one.)"
+        help=(
+            "One or more files to process. (Optional; can use --file instead to process just one.)"
+            " Relative names are resolved against the current directory when run from inside the"
+            " inputdata tree; otherwise against the inputdata root."
+        ),
     )
 
     # Add inputdata_root option flags
@@ -121,6 +131,10 @@ def normalize_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
     For each name in relnames:
     - If the name is relative, it is assumed to be relative to `root` and made absolute
     All paths are then normalized to their absolute form, replacing . and .. as needed.
+
+    Callers (get_files_to_process) already anchor inside-tree names to cwd or to the list file's
+    directory before calling this function, so a name that is still relative when it reaches here
+    is one whose anchor was outside the inputdata tree; the root-join above is what resolves those.
 
     Note that symlinks are NOT resolved.
 
@@ -432,7 +446,8 @@ def main(argv: List[str] | None = None) -> int:
     Exit Codes:
         0: All files staged successfully.
         1: One or more files failed to stage or relink (errors printed to stderr).
-        2: Fatal error (missing inputdata directory, missing file list, etc.).
+        2: Fatal error (missing inputdata directory, missing file list, a relative entry in a
+           --list file whose directory is outside the inputdata tree, etc.).
     """
     parser = build_parser()
     args = parser.parse_args(argv)

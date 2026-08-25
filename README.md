@@ -10,6 +10,8 @@ Tools used for publishing CESM input data.
 Notes:
 - Use `rimport --check` if you'd like to see the current status of a file, including whether it's available for download.
 - The `relink.py` script was previously used for step 3 above, but that functionality is now built into `rimport`. It's still there if you want to use it by itself.
+- A relative filename passed to `rimport` directly (via `--file` or as a positional argument) is resolved against your current directory, not the inputdata root, whenever you run `rimport` from inside the inputdata tree (running from the root itself counts). There's no fallback to the root on a miss, so run from outside the tree, or pass an absolute path, if you want the old root-relative resolution.
+- A relative entry in a `--list` file is resolved against that list file's own directory rather than against the inputdata root. **Breaking change:** if the list file lives outside the inputdata tree, relative entries are no longer resolved against the root at all — `rimport` now exits with an error, so list files kept outside the tree must use absolute paths.
 
 ## Filenames and metadata:
 
