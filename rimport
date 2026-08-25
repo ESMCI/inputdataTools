@@ -186,15 +186,20 @@ def stage_data(
         RuntimeError: If `src` is a live symlink pointing outside staging, or if `src` is outside
                       the inputdata root, or if `src` is already under staging directory.
         RuntimeError: If `src` is a broken symlink.
-        RuntimeError: If `src` is a directory (or a symlink to one).
+        RuntimeError: If `src` is a directory. This check runs only when `src` is not itself
+                      a symlink — see the symlink guardrails above, which return early (without
+                      raising) for a symlink whose target is a directory.
         RuntimeError: If it failed to replace `src` with a symlink to the staged file.
         FileNotFoundError: If `src` does not exist.
 
     Guardrails:
         * Raise if `src` is a *live* symlink to a file outside staging root ("outside staging").
         * Raise if `src` is a broken symlink or is outside the inputdata root.
-        * Raise if `src` is a directory, so a directory source can never reach the
-          replace-with-symlink path (which assumes a regular file and mangles a directory).
+        * Raise if `src` is a directory and not itself a symlink, so a non-symlink directory
+          source can never reach the replace-with-symlink path (which assumes a regular file
+          and mangles a directory). A *symlink* whose target is a directory is NOT covered by
+          this guardrail: it is handled by the live-symlink guardrails above instead, which log
+          "already published and linked" and return without raising.
     """
     if src.is_symlink():
         if not os.path.exists(src.resolve()):
