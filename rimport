@@ -54,8 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="filename",
         help=(
             "Provide a file to import. Must be in the CESM inputdata directory. Relative names are"
-            " resolved against the current directory when run from inside the inputdata tree;"
-            " otherwise against the inputdata root."
+            " resolved against the current directory when run from inside the inputdata tree (no"
+            " fallback to the root if the file isn't found there); otherwise against the"
+            " inputdata root."
         ),
     )
 
@@ -78,7 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "One or more files to process. (Optional; can use --file instead to process just one.)"
             " Relative names are resolved against the current directory when run from inside the"
-            " inputdata tree; otherwise against the inputdata root."
+            " inputdata tree (no fallback to the root if the file isn't found there); otherwise"
+            " against the inputdata root."
         ),
     )
 
@@ -188,18 +190,21 @@ def stage_data(
         RuntimeError: If `src` is a broken symlink.
         RuntimeError: If `src` is a directory. This check runs only when `src` is not itself
                       a symlink — see the symlink guardrails above, which return early (without
-                      raising) for a symlink whose target is a directory.
+                      raising) for a symlink whose target is a directory under `staging_root`.
+                      A symlink whose directory target is outside `staging_root` instead raises
+                      via the first entry above.
         RuntimeError: If it failed to replace `src` with a symlink to the staged file.
         FileNotFoundError: If `src` does not exist.
 
     Guardrails:
-        * Raise if `src` is a *live* symlink to a file outside staging root ("outside staging").
+        * Raise if `src` is a *live* symlink to a target outside staging root ("outside staging").
         * Raise if `src` is a broken symlink or is outside the inputdata root.
         * Raise if `src` is a directory and not itself a symlink, so a non-symlink directory
           source can never reach the replace-with-symlink path (which assumes a regular file
           and mangles a directory). A *symlink* whose target is a directory is NOT covered by
-          this guardrail: it is handled by the live-symlink guardrails above instead, which log
-          "already published and linked" and return without raising.
+          this guardrail: it is handled by the live-symlink guardrails above instead, which for
+          a target under `staging_root` log "already published and linked" and return without
+          raising, and for a target outside `staging_root` raise (see the first guardrail above).
     """
     if src.is_symlink():
         if not os.path.exists(src.resolve()):
@@ -368,6 +373,15 @@ def get_files_to_process(
     with no fallback to the root. If cwd is outside the tree, they are left unchanged for
     normalize_paths to later resolve against `inputdata_root`, as before.
 
+    If `Path.cwd()` itself raises (e.g. the working directory was deleted out from under the
+    process), that is treated the same as "cwd is outside the tree": non-absolute
+    `file`/`items_to_process` entries fall back to the root-relative resolution described above,
+    instead of the exception propagating. A warning is logged in this case, but only when at
+    least one `file`/`items_to_process` entry is non-absolute — that's the only case where the
+    fallback changes which file gets resolved. This fallback and its warning are specific to
+    `file`/`items_to_process`; `--list` entries are unaffected, since they are anchored to the
+    list file's own directory rather than to cwd.
+
     Non-absolute `--list` entries are anchored against the list file's own directory (the root
     itself counts as inside), not the cwd: if that directory is inside the inputdata tree, a
     relative entry is resolved (eagerly, absolute) against it; if the list file's directory is
@@ -436,7 +450,8 @@ def get_files_to_process(
             else:
                 logger.error(
                     "rimport: relative path '%s' not allowed in list file outside "
-                    "the inputdata tree: %s",
+                    "the inputdata tree: %s; use absolute paths or move the list "
+                    "file into the inputdata tree",
                     entry,
                     list_path,
                 )
