@@ -29,6 +29,26 @@ def fixture_mock_dirs(tmp_path):
     return source_dir, target_dir, source_file, target_file
 
 
+@pytest.fixture(name="nested_mock_dirs")
+def fixture_nested_mock_dirs(tmp_path):
+    """Create a nested source/target layout for testing relative-path resolution
+    from inside an inputdata subdirectory."""
+    source_dir = tmp_path / "source"
+    target_dir = tmp_path / "target"
+    source_sub_dir = source_dir / "sub"
+    target_sub_dir = target_dir / "sub"
+    source_sub_dir.mkdir(parents=True)
+    target_sub_dir.mkdir(parents=True)
+
+    # Create a test file
+    source_file = source_sub_dir / "test_file.txt"
+    target_file = target_sub_dir / "test_file.txt"
+    source_file.write_text("source content")
+    target_file.write_text("target content")
+
+    return source_dir, target_dir, source_sub_dir, source_file, target_file
+
+
 def test_command_line_execution_dry_run(mock_dirs):
     """Test executing relink.py from command line with --dry-run flag."""
     source_dir, target_dir, source_file, _ = mock_dirs
@@ -134,6 +154,103 @@ def test_command_line_execution_given_file(mock_dirs):
 
     # Verify success messages in output
     assert f"{INDENT}Created symbolic link:" in result.stdout
+
+
+def test_command_line_relative_file_from_inputdata_subdir(nested_mock_dirs):
+    """Test that a bare relative filename is resolved against the cwd (an
+    inputdata subdirectory), not against the inputdata root."""
+    source_dir, target_dir, source_sub_dir, source_file, target_file = (
+        nested_mock_dirs
+    )
+
+    # Get the path to relink.py
+    relink_script = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "relink.py",
+    )
+
+    # Build the command
+    command = [
+        sys.executable,
+        relink_script,
+        "test_file.txt",
+        "--target-root",
+        str(target_dir),
+        "--inputdata-root",
+        str(source_dir),
+    ]
+
+    # Execute the command with cwd set to the inputdata subdirectory
+    result = subprocess.run(
+        command, cwd=str(source_sub_dir), capture_output=True, text=True, check=False
+    )
+
+    # Verify the command executed successfully
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+
+    # Verify the file was converted to a symlink pointing at the target copy
+    assert source_file.is_symlink()
+    assert os.readlink(str(source_file)) == str(target_file)
+
+
+def test_command_line_relative_dir_dot_from_inputdata_subdir(nested_mock_dirs):
+    """Test that '.' is resolved against the cwd (an inputdata subdirectory),
+    not against the inputdata root.
+
+    A decoy file sits directly under the inputdata root, outside "sub", with
+    a matching target copy so it *would* be relinkable if reached. Because
+    relink's search is recursive, resolving '.' against cwd (source_dir/sub)
+    never reaches the decoy, while a root-relative regression -- resolving
+    '.' against inputdata_root (source_dir) instead -- would recurse into
+    the decoy too. Only the decoy assertion below actually discriminates
+    between those two resolutions; the symlink-target subdirectory
+    (test_file.txt) is reached by recursion either way.
+    """
+    source_dir, target_dir, source_sub_dir, source_file, target_file = (
+        nested_mock_dirs
+    )
+
+    # Decoy file directly under the inputdata root (outside "sub"), with a
+    # matching target copy. Correct cwd-relative resolution of "." never
+    # reaches this file; a root-relative regression would.
+    decoy_file = source_dir / "decoy.txt"
+    decoy_target = target_dir / "decoy.txt"
+    decoy_file.write_text("decoy content")
+    decoy_target.write_text("decoy target content")
+
+    # Get the path to relink.py
+    relink_script = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "relink.py",
+    )
+
+    # Build the command
+    command = [
+        sys.executable,
+        relink_script,
+        ".",
+        "--target-root",
+        str(target_dir),
+        "--inputdata-root",
+        str(source_dir),
+    ]
+
+    # Execute the command with cwd set to the inputdata subdirectory
+    result = subprocess.run(
+        command, cwd=str(source_sub_dir), capture_output=True, text=True, check=False
+    )
+
+    # Verify the command executed successfully
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+
+    # Verify the file was converted to a symlink pointing at the target copy
+    assert source_file.is_symlink()
+    assert os.readlink(str(source_file)) == str(target_file)
+
+    # Verify the decoy outside "sub" was NOT reached/relinked
+    assert decoy_file.is_file()
+    assert not decoy_file.is_symlink()
+    assert decoy_file.read_text() == "decoy content"
 
 
 def test_command_line_multiple_source_dirs(temp_dirs):
