@@ -55,11 +55,15 @@ class TestMain:
         mock_normalize_paths.return_value = [test_file]
 
         # Run
-        result = rimport.main(["-file", "test.nc", "-inputdata", str(inputdata_root)])
+        # Absolute -file removes cwd coupling entirely: get_files_to_process runs for real here
+        # (unmocked), and a relative name would anchor to the pytest invocation dir, not tmp_path.
+        result = rimport.main(
+            ["-file", str(test_file), "-inputdata", str(inputdata_root)]
+        )
 
         # Verify
         assert result == 0
-        mock_normalize_paths.assert_called_once_with(inputdata_root, ["test.nc"])
+        mock_normalize_paths.assert_called_once_with(inputdata_root, [str(test_file)])
         check = False
         mock_stage_data.assert_called_once_with(
             test_file, inputdata_root, staging_root, check

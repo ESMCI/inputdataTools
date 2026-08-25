@@ -245,49 +245,6 @@ class TestRimportCommandLine:
         assert decoy_file.read_text() == "decoy data"
         assert not (staging_root / "atm" / "clm2" / "file1.nc").exists()
 
-    def test_list_outside_tree_relative_entry_error(
-        self, rimport_script, test_env, rimport_env
-    ):
-        """Test that a relative entry in a list file outside the tree is a fatal error."""
-        inputdata_root = test_env["inputdata_root"]
-        staging_root = test_env["staging_root"]
-        tmp_path = test_env["tmp_path"]
-
-        # Create the file that would be staged if this succeeded
-        test_file = inputdata_root / "file1.nc"
-        test_file.write_text("data1")
-
-        # Create filelist OUTSIDE the tree with a relative entry
-        filelist = tmp_path / "filelist.txt"
-        filelist.write_text("file1.nc\n")
-
-        # Run rimport with -list option
-        command = [
-            sys.executable,
-            rimport_script,
-            "-list",
-            str(filelist),
-            "-inputdata",
-            str(inputdata_root),
-        ]
-
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=rimport_env,
-        )
-
-        # Verify fatal error, naming both the offending entry and the list file
-        assert result.returncode == 2
-        assert "file1.nc" in result.stderr
-        assert str(filelist.resolve()) in result.stderr
-
-        # Verify nothing was staged or symlinked
-        assert not (staging_root / "file1.nc").exists()
-        assert not test_file.is_symlink()
-
     def test_preserves_directory_structure(self, rimport_script, test_env, rimport_env):
         """Test that directory structure is preserved in staging."""
         inputdata_root = test_env["inputdata_root"]
@@ -755,17 +712,28 @@ class TestRimportCommandLine:
         # Verify nothing was staged
         assert not any(staging_root.iterdir())
 
-    def test_relative_file_from_outside_tree_resolves_against_root(
+    def test_relative_file_from_outside_tree_errors_no_root_fallback(
         self, rimport_script, test_env, rimport_env
     ):
-        """Test that a relative positional filename still resolves against the inputdata root,
-        as before, when rimport is run from outside the inputdata tree."""
+        """Test that a relative positional filename run from OUTSIDE the inputdata tree anchors
+        to cwd and errors, rather than falling back to a same-named file at the inputdata root.
+
+        This is the configuration the deleted root-fallback actually operated in: with cwd
+        inside the tree the old dual-mode code already anchored to cwd, so the sibling tests
+        above would have passed against it unmodified. Only an outside-the-tree cwd
+        discriminates the old behavior (silently stage the root file, rc 0) from the new one
+        (error, stage nothing). The decoy is what makes it discriminating: without a file at
+        the root-anchored path there would be nothing for a regression to wrongly publish.
+        """
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
         tmp_path = test_env["tmp_path"]
 
-        test_file = inputdata_root / "test.nc"
-        test_file.write_text("root data")
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        decoy_file = inputdata_root / "test.nc"
+        decoy_file.write_text("decoy data")
 
         # Run rimport with a relative positional filename, from outside the tree
         command = [
@@ -782,20 +750,19 @@ class TestRimportCommandLine:
             text=True,
             check=False,
             env=rimport_env,
-            cwd=tmp_path,
+            cwd=outside,
         )
 
-        # Verify success
-        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        # Verify failure. Deliberately not pinning the exact code: pre-flight validation
+        # (a later task) shifts this class of user error from 1 to 2.
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
 
-        # Verify the file was staged, resolved against the inputdata root
-        staged_file = staging_root / "test.nc"
-        assert staged_file.exists()
-        assert staged_file.read_text() == "root data"
+        # Verify the decoy at the inputdata root was NOT published
+        assert not decoy_file.is_symlink()
+        assert decoy_file.read_text() == "decoy data"
 
-        # Verify file was relinked
-        assert test_file.is_symlink()
-        assert test_file.resolve() == staged_file
+        # Verify nothing was staged
+        assert not any(staging_root.iterdir())
 
     def test_dotdot_escape_from_subdir_errors(
         self, rimport_script, test_env, rimport_env

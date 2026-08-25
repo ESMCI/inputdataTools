@@ -39,20 +39,19 @@ class TestGetRelnamesToProcess:
         test_file = inputdata_root / filename
         test_file.write_text("abc123")
 
-        # cwd outside the inputdata tree: relative name stays unanchored
-        monkeypatch.chdir(tmp_path)
+        # A relative name always anchors to cwd
+        monkeypatch.chdir(inputdata_root)
 
         # Run
         files_to_process, result = rimport.get_files_to_process(
             file=filename,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
         assert result == 0
-        assert files_to_process == [filename]
+        assert files_to_process == [str(inputdata_root.resolve() / filename)]
 
     def test_single_file_abspath(self, tmp_path):
         """Test giving it a single file by its absolute path"""
@@ -71,73 +70,11 @@ class TestGetRelnamesToProcess:
             file=test_file,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
         assert result == 0
         assert files_to_process == [test_file]
-
-    def test_filelist_relpath_with_relpaths(self, tmp_path):
-        """Test giving it a file list (outside tree) by its relative path, containing relative
-        paths: fatal error, since the list file is outside the inputdata tree"""
-        # Setup
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
-        staging_root = tmp_path / "staging"
-        staging_root.mkdir()
-
-        filenames = []
-        for i in range(2):
-            filename = f"test{i}.txt"
-            filenames.append(filename)
-            (inputdata_root / filename).write_text("def567")
-
-        filelist = tmp_path / "file_list.txt"
-        filelist.write_text("\n".join(filenames), encoding="utf8")
-        filelist_relpath = os.path.relpath(filelist)
-
-        # Run
-        files_to_process, result = rimport.get_files_to_process(
-            file=None,
-            filelist=filelist_relpath,
-            items_to_process=None,
-            inputdata_root=inputdata_root,
-        )
-
-        # Verify
-        assert result == 2
-        assert files_to_process is None
-
-    def test_filelist_abspath_with_relpaths(self, tmp_path):
-        """Test giving it a file list (outside tree) by its absolute path, containing relative
-        paths: fatal error, since the list file is outside the inputdata tree"""
-        # Setup
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
-        staging_root = tmp_path / "staging"
-        staging_root.mkdir()
-
-        filenames = []
-        for i in range(2):
-            filename = f"test{i}.txt"
-            filenames.append(filename)
-            (inputdata_root / filename).write_text("def567")
-
-        filelist = tmp_path / "file_list.txt"
-        filelist.write_text("\n".join(filenames), encoding="utf8")
-
-        # Run
-        files_to_process, result = rimport.get_files_to_process(
-            file=None,
-            filelist=filelist,
-            items_to_process=None,
-            inputdata_root=inputdata_root,
-        )
-
-        # Verify
-        assert result == 2
-        assert files_to_process is None
 
     def test_filelist_relpath_with_abspaths(self, tmp_path):
         """Test giving it a file list by its relative path, containing absolute paths"""
@@ -162,7 +99,6 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=filelist_relpath,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -191,7 +127,6 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -215,7 +150,6 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -257,7 +191,6 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -280,7 +213,6 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -288,29 +220,32 @@ class TestGetRelnamesToProcess:
         root_resolved = inputdata_root.resolve()
         assert files_to_process == [str(root_resolved / f) for f in filenames]
 
-    def test_list_outside_tree_relative_entry_errors(self, tmp_path, caplog):
-        """Test that a relative entry in a list file outside the tree is a fatal error"""
+    def test_list_outside_tree_relative_entry_anchors_to_list_dir(self, tmp_path, monkeypatch):
+        """Test that a relative entry in a list file OUTSIDE the tree now anchors to the list
+        file's own directory instead of erroring (the deleted root-fallback used to make this a
+        fatal error). Discriminating setup: cwd is neither the list dir nor the inputdata root,
+        so the assertion can distinguish list-dir-anchoring from cwd-anchoring and from the
+        (now-impossible) root-anchoring."""
         # Setup
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
-
-        filelist = tmp_path / "filelist.txt"
+        list_dir = tmp_path / "outside" / "listdir"
+        list_dir.mkdir(parents=True)
+        filelist = list_dir / "filelist.txt"
         filelist.write_text("relative_file.nc\n", encoding="utf8")
+
+        elsewhere = tmp_path / "outside" / "elsewhere"
+        elsewhere.mkdir(parents=True)
+        monkeypatch.chdir(elsewhere)
 
         # Run
         files_to_process, result = rimport.get_files_to_process(
             file=None,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
-        assert result == 2
-        assert files_to_process is None
-        assert "relative_file.nc" in caplog.text
-        assert str(filelist.resolve()) in caplog.text
-        assert "use absolute paths or move the list file" in caplog.text
+        assert result == 0
+        assert files_to_process == [str((list_dir / "relative_file.nc").resolve())]
 
     def test_list_outside_tree_absolute_entries_ok(self, tmp_path):
         """Test that a list file outside the tree still works when all entries are absolute"""
@@ -332,7 +267,6 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -341,32 +275,24 @@ class TestGetRelnamesToProcess:
 
     def test_filelist_not_found(self, tmp_path):
         """Test giving it a file list that doesn't exist"""
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
-
         filelist = "bsfearirn"
         assert not os.path.exists(filelist)
         files_to_process, result = rimport.get_files_to_process(
             file=None,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
         assert result == 2
         assert files_to_process is None
 
     def test_filelist_empty(self, tmp_path):
         """Test giving it an empty file list"""
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
-
         filelist = tmp_path / "bsfearirn"
         filelist.write_text("")
         files_to_process, result = rimport.get_files_to_process(
             file=None,
             filelist=filelist,
             items_to_process=[],
-            inputdata_root=inputdata_root,
         )
         assert result == 2
         assert files_to_process is None
@@ -390,7 +316,6 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=None,
             items_to_process=filenames,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -409,20 +334,19 @@ class TestGetRelnamesToProcess:
             filenames.append(os.path.basename(filename))
             filename.write_text("def567")
 
-        # cwd outside the inputdata tree: relative names stay unanchored
-        monkeypatch.chdir(tmp_path)
+        # A relative name always anchors to cwd
+        monkeypatch.chdir(inputdata_root)
 
         # Run
         files_to_process, result = rimport.get_files_to_process(
             file=None,
             filelist=None,
             items_to_process=filenames,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
         assert result == 0
-        assert files_to_process == filenames
+        assert files_to_process == [str(inputdata_root.resolve() / f) for f in filenames]
 
     def test_items_to_process_mixpaths(self, tmp_path, monkeypatch):
         """Test giving it a list of absolute and relative paths in items_to_process"""
@@ -441,31 +365,38 @@ class TestGetRelnamesToProcess:
             filename.write_text("def567")
         assert len(filenames) == 4
 
-        # cwd outside the inputdata tree: relative names stay unanchored
-        monkeypatch.chdir(tmp_path)
+        # A relative name always anchors to cwd; absolute names are unaffected
+        monkeypatch.chdir(inputdata_root)
 
         # Run
         files_to_process, result = rimport.get_files_to_process(
             file=None,
             filelist=None,
             items_to_process=filenames,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
         assert result == 0
-        assert files_to_process == filenames
+        assert files_to_process == [str(inputdata_root.resolve() / f) for f in filenames[:2]] + (
+            filenames[2:]
+        )
 
     def test_single_file_and_list(self, tmp_path, monkeypatch):
-        """Test giving it a single file by its relative path"""
+        """Test giving it a single file by its relative path together with a list file.
+        Discriminating setup: cwd is a SUBDIRECTORY of inputdata_root, distinct from the list
+        file's own directory (inputdata_root itself), so the test pins cwd-anchoring for the
+        relative `file` and list-dir-anchoring for the list entries at once, and can tell the
+        two apart."""
         # Setup
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
         staging_root = tmp_path / "staging"
         staging_root.mkdir()
+        subdir = inputdata_root / "sub"
+        subdir.mkdir()
 
         filename = "test.nc"
-        test_file = inputdata_root / filename
+        test_file = subdir / filename
         test_file.write_text("abc123")
 
         filenames = []
@@ -477,34 +408,29 @@ class TestGetRelnamesToProcess:
         filelist = inputdata_root / "file_list.txt"
         filelist.write_text("\n".join(filenames), encoding="utf8")
 
-        # cwd outside the inputdata tree: relative `file` name stays unanchored
-        monkeypatch.chdir(tmp_path)
+        # cwd is inside the tree, but at the subdir, not the list file's own directory
+        monkeypatch.chdir(subdir)
 
         # Run
         files_to_process, result = rimport.get_files_to_process(
             file=filename,
             filelist=filelist,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
         assert result == 0
-        assert files_to_process == [filename] + [
+        assert files_to_process == [str(subdir.resolve() / filename)] + [
             str(inputdata_root.resolve() / f) for f in filenames
         ]
 
     def test_single_or_filelist_or_list_required(self, tmp_path):
         """Test that at least one of file, filelist, items_to_process is required"""
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
-
         # Run
         files_to_process, result = rimport.get_files_to_process(
             file=None,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -526,7 +452,6 @@ class TestGetRelnamesToProcess:
             file=filename,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -548,17 +473,16 @@ class TestGetRelnamesToProcess:
             file=None,
             filelist=None,
             items_to_process=filenames,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
         assert result == 0
         assert files_to_process == [str(cwd / f) for f in filenames]
 
-    def test_cli_relative_cwd_outside_tree_unchanged(self, tmp_path, monkeypatch):
-        """Test that a relative --file name is left unchanged when cwd is outside the tree"""
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
+    def test_cli_relative_cwd_outside_tree_still_anchors_to_cwd(self, tmp_path, monkeypatch):
+        """Test that a relative --file name anchors to cwd even when cwd is outside the
+        inputdata tree: there is no inside/outside distinction any more, one rule applies
+        everywhere, with no root-relative fallback."""
         outside = tmp_path / "outside"
         outside.mkdir()
         monkeypatch.chdir(outside)
@@ -570,12 +494,11 @@ class TestGetRelnamesToProcess:
             file=filename,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
         assert result == 0
-        assert files_to_process == [filename]
+        assert files_to_process == [str(outside.resolve() / filename)]
 
     def test_cli_cwd_equals_root_anchors_to_root(self, tmp_path, monkeypatch):
         """Test that cwd == inputdata root counts as inside the tree"""
@@ -591,7 +514,6 @@ class TestGetRelnamesToProcess:
             file=filename,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -612,7 +534,6 @@ class TestGetRelnamesToProcess:
             file=abs_file,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -636,7 +557,6 @@ class TestGetRelnamesToProcess:
             file=filename,
             filelist=None,
             items_to_process=None,
-            inputdata_root=inputdata_root,
         )
 
         # Verify
@@ -663,7 +583,6 @@ class TestGetRelnamesToProcess:
                 file=abs_file,
                 filelist=None,
                 items_to_process=None,
-                inputdata_root=inputdata_root,
             )
 
         # Verify
@@ -672,14 +591,11 @@ class TestGetRelnamesToProcess:
         # No warning: the cwd being undeterminable doesn't matter for absolute names
         assert "working directory" not in caplog.text.lower()
 
-    def test_deleted_cwd_with_relative_names_falls_back_to_root(
-        self, tmp_path, monkeypatch, caplog
-    ):
-        """Test that a deleted cwd does not raise for relative names either: since cwd can't be
-        determined, relative names are left unanchored for normalize_paths to later resolve
-        against inputdata_root (the pre-existing legacy behavior), rather than raising."""
-        inputdata_root = tmp_path / "inputdata"
-        inputdata_root.mkdir()
+    def test_deleted_cwd_with_relative_name_errors(self, tmp_path, monkeypatch, caplog):
+        """Test that a deleted cwd is now a FATAL error for relative names, rather than falling
+        back to root-relative resolution: with no fallback, there is nothing left to anchor a
+        relative name against. Confirms rc 2, files_to_process is None, and that the error
+        message names the offending relative name."""
         filename = "test.nc"
 
         deleted_dir = tmp_path / "deleted"
@@ -688,16 +604,44 @@ class TestGetRelnamesToProcess:
         deleted_dir.rmdir()
 
         # Run
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.ERROR):
             files_to_process, result = rimport.get_files_to_process(
                 file=filename,
                 filelist=None,
                 items_to_process=None,
-                inputdata_root=inputdata_root,
             )
 
         # Verify
-        assert result == 0
-        assert files_to_process == [filename]
-        # Relative names ARE affected (resolved against the root, not cwd, once staged) -- warn
+        assert result == 2
+        assert files_to_process is None
+        assert filename in caplog.text
         assert "working directory" in caplog.text.lower()
+
+    def test_deleted_cwd_with_multiple_relative_names_reports_all(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """Test that when a deleted cwd leaves several relative names unresolvable, the error
+        message names ALL of them, not just the first -- Sam's stated preference is to fail
+        before doing anything and name every offending input, not just one."""
+        filename = "test.nc"
+        item_names = ["a.txt", "b.txt"]
+
+        deleted_dir = tmp_path / "deleted"
+        deleted_dir.mkdir()
+        monkeypatch.chdir(deleted_dir)
+        deleted_dir.rmdir()
+
+        # Run
+        with caplog.at_level(logging.ERROR):
+            files_to_process, result = rimport.get_files_to_process(
+                file=filename,
+                filelist=None,
+                items_to_process=item_names,
+            )
+
+        # Verify
+        assert result == 2
+        assert files_to_process is None
+        assert filename in caplog.text
+        for item_name in item_names:
+            assert item_name in caplog.text

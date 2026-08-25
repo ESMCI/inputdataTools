@@ -361,74 +361,56 @@ def print_can_file_be_downloaded(file_can_be_downloaded: bool):
         logger.info("%sFile is not (yet) available for download.", INDENT)
 
 
-def get_files_to_process(
-    file: str, filelist: str, items_to_process: list, inputdata_root: Path
-):
+def get_files_to_process(file: str, filelist: str, items_to_process: list):
     """Get list of files to process.
 
     Uses --file and/or --filelist arguments, as well as positional items_to_process if given.
 
-    Non-absolute `file` and `items_to_process` entries are CLI args: if cwd is inside the
-    inputdata tree (the root itself counts), they are anchored (eagerly, absolute) to cwd,
-    with no fallback to the root. If cwd is outside the tree, they are left unchanged for
-    normalize_paths to later resolve against `inputdata_root`, as before.
+    One rule, no modes, no root-relative fallback: non-absolute `file` and
+    `items_to_process` entries are CLI args and always anchor (eagerly, absolute) to cwd.
+    Non-absolute `--list` entries always anchor (eagerly, absolute) against the list
+    file's own directory. Absolute paths are returned unchanged everywhere.
 
-    If `Path.cwd()` itself raises (e.g. the working directory was deleted out from under the
-    process), that is treated the same as "cwd is outside the tree": non-absolute
-    `file`/`items_to_process` entries fall back to the root-relative resolution described above,
-    instead of the exception propagating. A warning is logged in this case, but only when at
-    least one `file`/`items_to_process` entry is non-absolute — that's the only case where the
-    fallback changes which file gets resolved. This fallback and its warning are specific to
-    `file`/`items_to_process`; `--list` entries are unaffected, since they are anchored to the
-    list file's own directory rather than to cwd.
-
-    Non-absolute `--list` entries are anchored against the list file's own directory (the root
-    itself counts as inside), not the cwd: if that directory is inside the inputdata tree, a
-    relative entry is resolved (eagerly, absolute) against it; if the list file's directory is
-    outside the tree, a relative entry is a fatal error (relative paths are not allowed in list
-    files outside the inputdata tree).
+    If `Path.cwd()` itself raises (e.g. the working directory was deleted out from under
+    the process) and at least one `file`/`items_to_process` entry is relative, there is
+    nothing to anchor it against: this is fatal, reporting every offending relative name
+    in one error message and returning `(None, 2)`. Absolute `file`/`items_to_process`
+    entries, and all `--list` entries (which never anchor to cwd), are unaffected by an
+    undeterminable cwd.
 
     Args:
         file (str): Single file to process.
         filelist (str): File containing list of files to process.
         items_to_process (list): List of files to process.
-        inputdata_root (Path): Root of the inputdata tree, used to decide whether cwd is inside
-            it and, if so, to anchor relative CLI-arg names against cwd.
 
     Returns:
         list: List of files to process
         int:  Result code
     """
-    root_resolved = Path(inputdata_root).expanduser().resolve()
-    try:
-        cwd = Path.cwd().resolve()
-        cwd_inside = cwd.is_relative_to(root_resolved)
-    except OSError:
-        # cwd may have been deleted out from under the process (FileNotFoundError, itself an
-        # OSError). We can't anchor to a cwd we can't determine, so treat this the same as
-        # "cwd is outside the tree": fall back to the pre-existing root-relative behavior
-        # instead of letting the exception propagate.
-        cwd = None
-        cwd_inside = False
-        cli_args = ([file] if file is not None else []) + list(items_to_process or [])
-        if any(not Path(name).is_absolute() for name in cli_args):
-            logger.warning(
+    cli_args = ([file] if file is not None else []) + list(items_to_process or [])
+    relative_cli_args = [name for name in cli_args if not Path(name).is_absolute()]
+
+    cwd = None
+    if relative_cli_args:
+        try:
+            cwd = Path.cwd().resolve()
+        except OSError:
+            # cwd may have been deleted out from under the process (FileNotFoundError, itself
+            # an OSError). There is no root fallback to anchor a relative name against instead,
+            # so this is fatal: report every offending name in one error message.
+            logger.error(
                 "rimport: could not determine the current working directory (it may have "
-                "been deleted); relative --file/positional names will be resolved against "
-                "the inputdata root instead of cwd"
+                "been deleted); cannot resolve relative name(s): %s",
+                ", ".join(relative_cli_args),
             )
+            return None, 2
 
     def _anchor_cli(name):
         if Path(name).is_absolute():
             return name
-        if cwd_inside:
-            return str(cwd / name)  # strict: NO fallback to root
-        return name  # legacy: normalize_paths joins onto root later
+        return str(cwd / name)
 
-    if file is not None:
-        files_to_process = [_anchor_cli(file)]
-    else:
-        files_to_process = []
+    files_to_process = [_anchor_cli(file)] if file is not None else []
 
     if filelist is not None:
         list_path = Path(filelist).expanduser().resolve()
@@ -441,21 +423,11 @@ def get_files_to_process(
             return None, 2
 
         list_base = list_path.parent
-        list_inside = list_base.is_relative_to(root_resolved)
         for entry in files_in_list:
             if Path(entry).is_absolute():
                 files_to_process.append(entry)
-            elif list_inside:
-                files_to_process.append(str(list_base / entry))
             else:
-                logger.error(
-                    "rimport: relative path '%s' not allowed in list file outside "
-                    "the inputdata tree: %s; use absolute paths or move the list "
-                    "file into the inputdata tree",
-                    entry,
-                    list_path,
-                )
-                return None, 2
+                files_to_process.append(str(list_base / entry))
 
     if items_to_process:
         files_to_process.extend(_anchor_cli(item) for item in items_to_process)
@@ -510,7 +482,7 @@ def main(argv: List[str] | None = None) -> int:
 
     # Determine the list of relative filenames to handle
     files_to_process, status = get_files_to_process(
-        args.file, args.filelist, args.items_to_process, root
+        args.file, args.filelist, args.items_to_process
     )
     if status:
         return status
