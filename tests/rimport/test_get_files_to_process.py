@@ -222,6 +222,47 @@ class TestGetRelnamesToProcess:
         list_dir_resolved = list_dir.resolve()
         assert files_to_process == [str(list_dir_resolved / f) for f in filenames]
 
+    def test_list_relative_entries_anchor_to_list_dir_not_cwd(self, tmp_path, monkeypatch):
+        """Test that relative list entries anchor to the list file's own directory even when
+        the cwd is inside the tree at a DIFFERENT location. This is the discriminating setup:
+        every other list test runs with cwd outside the tree, where cwd-anchoring and
+        list-dir-anchoring agree and so can't tell the two schemes apart."""
+        # Setup
+        inputdata_root = tmp_path / "inputdata"
+        atm_dir = inputdata_root / "atm"
+        list_dir = inputdata_root / "lnd"
+        atm_dir.mkdir(parents=True)
+        list_dir.mkdir(parents=True)
+
+        # Real file, alongside the list file's own subtree
+        real_file = list_dir / "clm2" / "file1.nc"
+        real_file.parent.mkdir(parents=True)
+        real_file.write_text("real data")
+
+        # Decoy at the cwd-anchored location: a cwd-anchoring regression would resolve here
+        # instead, giving a wrong-file failure rather than a merely-missing-file one.
+        decoy_file = atm_dir / "clm2" / "file1.nc"
+        decoy_file.parent.mkdir(parents=True)
+        decoy_file.write_text("decoy data")
+
+        filelist = list_dir / "filelist.txt"
+        filelist.write_text("clm2/file1.nc\n", encoding="utf8")
+
+        # cwd inside the tree, but at a different location than the list file
+        monkeypatch.chdir(atm_dir)
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=None,
+            filelist=filelist,
+            items_to_process=None,
+            inputdata_root=inputdata_root,
+        )
+
+        # Verify
+        assert result == 0
+        assert files_to_process == [str(real_file.resolve())]
+
     def test_list_at_root_relative_entries_anchored_to_root(self, tmp_path):
         """Test that a list file located at the inputdata root itself (root counts as inside the
         tree) anchors relative entries to the root"""

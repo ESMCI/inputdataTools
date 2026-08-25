@@ -183,6 +183,68 @@ class TestRimportCommandLine:
         assert nested_file.is_symlink()
         assert nested_file.resolve() == staged_file
 
+    def test_list_inside_tree_relative_entries_anchor_to_list_dir_not_cwd(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a list file's relative entries anchor to the list file's own directory,
+        not the cwd, even when rimport is run with its cwd inside the tree at a DIFFERENT
+        location. The existing e2e list test passes no cwd= to subprocess.run, so pytest's own
+        (outside-the-tree) cwd applies and cwd-anchoring and list-dir-anchoring agree; this test
+        sets cwd= explicitly so the two schemes can be told apart."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        # Real file, alongside the list file inside "lnd"
+        nested_file = inputdata_root / "lnd" / "clm2" / "file1.nc"
+        nested_file.parent.mkdir(parents=True)
+        nested_file.write_text("real data")
+
+        filelist = inputdata_root / "lnd" / "filelist.txt"
+        filelist.write_text("clm2/file1.nc\n")
+
+        # Decoy at the cwd-anchored location: a cwd-anchoring regression would resolve here
+        # instead, giving a wrong-file failure rather than a merely-missing-file one.
+        decoy_file = inputdata_root / "atm" / "clm2" / "file1.nc"
+        decoy_file.parent.mkdir(parents=True)
+        decoy_file.write_text("decoy data")
+
+        # Run rimport with -list option, cwd inside the tree but at a DIFFERENT location
+        # than the list file
+        command = [
+            sys.executable,
+            rimport_script,
+            "-list",
+            str(filelist),
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=inputdata_root / "atm",
+        )
+
+        # Verify success
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Verify the real file (not the decoy) was staged, anchored to the list dir's subtree
+        staged_file = staging_root / "lnd" / "clm2" / "file1.nc"
+        assert staged_file.exists()
+        assert staged_file.read_text() == "real data"
+
+        # Verify file was relinked
+        assert nested_file.is_symlink()
+        assert nested_file.resolve() == staged_file
+
+        # Verify the decoy was left untouched, and nothing staged at the cwd-anchored path
+        assert not decoy_file.is_symlink()
+        assert decoy_file.read_text() == "decoy data"
+        assert not (staging_root / "atm" / "clm2" / "file1.nc").exists()
+
     def test_list_outside_tree_relative_entry_error(
         self, rimport_script, test_env, rimport_env
     ):
@@ -772,6 +834,57 @@ class TestRimportCommandLine:
         # Verify failure
         assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
         assert "not under inputdata root" in result.stderr
+
+        # Verify the outside file was left untouched
+        assert not outside_file.is_symlink()
+        assert outside_file.read_text() == "outside data"
+
+    def test_dotdot_escape_from_list_inside_tree_errors(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a '..'-escaping relative entry in a list file INSIDE the tree is rejected
+        by stage_data's existing outside-the-root guardrail. This is the list-side twin of
+        test_dotdot_escape_from_subdir_errors above."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+        tmp_path = test_env["tmp_path"]
+
+        list_dir = inputdata_root / "lnd"
+        list_dir.mkdir(parents=True)
+
+        # File must exist, or the "source not found" check fires before the guardrail and the
+        # "not under inputdata root" message never appears.
+        outside_file = tmp_path / "outside.nc"
+        outside_file.write_text("outside data")
+
+        # List file INSIDE the tree, with an entry that escapes the tree
+        filelist = list_dir / "filelist.txt"
+        filelist.write_text("../../outside.nc\n")
+
+        # Run rimport with -list option
+        command = [
+            sys.executable,
+            rimport_script,
+            "-list",
+            str(filelist),
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify failure
+        assert result.returncode == 1, f"Command unexpectedly passed: {result.stdout}"
+        assert "not under inputdata root" in result.stderr
+
+        # Verify nothing was staged
+        assert not any(staging_root.rglob("*"))
 
         # Verify the outside file was left untouched
         assert not outside_file.is_symlink()
