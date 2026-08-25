@@ -158,10 +158,34 @@ def test_command_line_execution_given_file(mock_dirs):
 
 def test_command_line_relative_file_from_inputdata_subdir(nested_mock_dirs):
     """Test that a bare relative filename is resolved against the cwd (an
-    inputdata subdirectory), not against the inputdata root."""
+    inputdata subdirectory), not against the inputdata root.
+
+    A same-named decoy file sits directly under the inputdata root, outside
+    "sub", with different content than the intended file, plus a matching
+    target copy (also with different content) so it *would* be relinked if a
+    root-relative regression resolved "test_file.txt" against inputdata_root
+    instead of cwd. Because this is a single-file argument rather than a
+    directory to recurse into, such a regression would process the decoy
+    INSTEAD OF the subdir file, not in addition to it. The return code and
+    decoy_file.is_file() pass either way (the latter because is_file()
+    follows a symlink to a real file); what actually discriminates is that
+    the decoy stays a plain file with its original content (not relinked),
+    and that the intended subdir file is the one converted to a symlink --
+    pointing at the subdir's target copy, not the root decoy's.
+    """
     source_dir, target_dir, source_sub_dir, source_file, target_file = (
         nested_mock_dirs
     )
+
+    # Decoy file directly under the inputdata root (outside "sub"), same
+    # name as the intended file but different content, with a matching
+    # target copy (also different content). Correct cwd-relative resolution
+    # of "test_file.txt" never reaches this file; a root-relative regression
+    # would relink it instead of the subdir file.
+    decoy_file = source_dir / "test_file.txt"
+    decoy_target = target_dir / "test_file.txt"
+    decoy_file.write_text("decoy content")
+    decoy_target.write_text("decoy target content")
 
     # Get the path to relink.py
     relink_script = os.path.join(
@@ -188,9 +212,15 @@ def test_command_line_relative_file_from_inputdata_subdir(nested_mock_dirs):
     # Verify the command executed successfully
     assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
 
-    # Verify the file was converted to a symlink pointing at the target copy
+    # Verify the intended subdir file was converted to a symlink pointing at
+    # the subdir's target copy (not the root decoy's)
     assert source_file.is_symlink()
     assert os.readlink(str(source_file)) == str(target_file)
+
+    # Verify the decoy at the inputdata root was NOT reached/relinked
+    assert decoy_file.is_file()
+    assert not decoy_file.is_symlink()
+    assert decoy_file.read_text() == "decoy content"
 
 
 def test_command_line_relative_dir_dot_from_inputdata_subdir(nested_mock_dirs):
