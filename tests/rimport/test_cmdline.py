@@ -61,7 +61,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            "test.nc",
+            str(test_file),
             "-inputdata",
             str(inputdata_root),
         ]
@@ -303,7 +303,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            "dir1/dir2/file.nc",
+            str(nested_file),
             "-inputdata",
             str(inputdata_root),
         ]
@@ -337,7 +337,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            "nonexistent.nc",
+            str(inputdata_root / "nonexistent.nc"),
             "-inputdata",
             str(inputdata_root),
         ]
@@ -501,7 +501,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            "link.nc",
+            str(src),
             "-inputdata",
             str(inputdata_root),
         ]
@@ -544,7 +544,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            "link.nc",
+            str(src),
             "-inputdata",
             str(inputdata_root),
         ]
@@ -586,7 +586,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            "link.nc",
+            str(src),
             "-inputdata",
             str(inputdata_root),
         ]
@@ -624,7 +624,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            file_basename,
+            str(test_file),
             "-inputdata",
             str(inputdata_root),
             "--check",
@@ -910,7 +910,7 @@ class TestRimportCommandLine:
             sys.executable,
             rimport_script,
             "-file",
-            file_basename,
+            str(test_file),
             "-inputdata",
             str(inputdata_root),
             "--check",
