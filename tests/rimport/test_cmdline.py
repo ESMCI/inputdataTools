@@ -825,3 +825,157 @@ class TestRimportCommandLine:
         assert "Deleted original file".lower() not in result.stdout.lower()
         assert "Created symbolic link".lower() not in result.stdout.lower()
         assert "Error creating symlink".lower() not in result.stdout.lower()
+
+    def test_directory_argument_from_subdir_errors_and_leaves_tree_intact(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that pointing rimport at a directory (e.g. via the cwd-anchored positional from
+        inside an inputdata subdir) errors cleanly instead of falling into the destructive
+        replace-with-symlink path, which would rename the directory to '<name>.tmp', symlink it
+        away, and then fail to roll back."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        subdir = inputdata_root / "lnd" / "clm2"
+        subdir.mkdir(parents=True)
+        inner_file = subdir / "data.nc"
+        inner_file.write_text("clm2 data")
+
+        # The matching staging mirror must ALSO exist as a directory, or dst.exists() is False
+        # and stage_data takes the harmless "not already published" branch instead of the
+        # destructive one — this is the fixture detail that makes the bug actually bite.
+        staging_mirror = staging_root / "lnd" / "clm2"
+        staging_mirror.mkdir(parents=True)
+
+        # Run rimport with a relative positional directory name, from inside the parent dir
+        command = [
+            sys.executable,
+            rimport_script,
+            "clm2",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=subdir.parent,
+        )
+
+        # Verify failure
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
+        assert "directory" in result.stderr
+        assert "not a file" in result.stderr
+
+        # Verify the tree is intact: clm2 is still a real directory, not a symlink; no
+        # '<name>.tmp' path was left anywhere under inputdata_root; and its contents are
+        # untouched.
+        assert subdir.is_dir() and not subdir.is_symlink(), (
+            f"clm2 should still be a plain, non-symlink directory after the error; "
+            f"is_dir={subdir.is_dir()} is_symlink={subdir.is_symlink()}"
+        )
+        tmp_paths = list(inputdata_root.rglob("*.tmp"))
+        assert not tmp_paths, f"Found unexpected '.tmp' path(s) left behind: {tmp_paths}"
+        assert inner_file.read_text() == "clm2 data"
+
+    def test_empty_string_argument_errors_and_leaves_tree_intact(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that an empty-string positional (as from an unset shell variable, e.g.
+        `rimport "$maybe_unset"`) errors cleanly instead of anchoring to the inputdata root
+        itself and running that root through the destructive replace-with-symlink path."""
+        inputdata_root = test_env["inputdata_root"]
+        # staging_root itself need not be assigned here — the fixture already created it, and
+        # its mere existence is what makes dst.exists() true for rel="." (see the brief: this is
+        # what turns an unset shell variable into a whole-tree rename).
+
+        marker_file = inputdata_root / "marker.nc"
+        marker_file.write_text("root marker")
+
+        # Run rimport with an empty-string positional, from inside the inputdata root itself,
+        # so it anchors (via _anchor_cli) to the root — the same as an unset shell variable
+        # expanding to "".
+        command = [
+            sys.executable,
+            rimport_script,
+            "",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=inputdata_root,
+        )
+
+        # Verify failure
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
+        assert "directory" in result.stderr
+        assert "not a file" in result.stderr
+
+        # Verify the inputdata root itself is untouched: still a real directory, not renamed,
+        # not replaced with a symlink, no '.tmp' sibling.
+        assert inputdata_root.is_dir() and not inputdata_root.is_symlink(), (
+            f"inputdata root should still be a plain, non-symlink directory after the error; "
+            f"is_dir={inputdata_root.is_dir()} is_symlink={inputdata_root.is_symlink()}"
+        )
+        tmp_siblings = list(inputdata_root.parent.glob(f"{inputdata_root.name}.tmp"))
+        assert not tmp_siblings, f"Found unexpected '.tmp' sibling(s): {tmp_siblings}"
+        assert marker_file.read_text() == "root marker"
+
+    def test_check_directory_argument_reports_error_not_publishable(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that --check on a directory argument reports it as an error, rather than
+        claiming (as it did before the guard) that the directory is already published but not
+        linked and available for download."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        subdir = inputdata_root / "lnd" / "clm2"
+        subdir.mkdir(parents=True)
+        inner_file = subdir / "data.nc"
+        inner_file.write_text("clm2 data")
+
+        # Matching staging mirror, as in the destructive-path test above.
+        staging_mirror = staging_root / "lnd" / "clm2"
+        staging_mirror.mkdir(parents=True)
+
+        command = [
+            sys.executable,
+            rimport_script,
+            "clm2",
+            "-inputdata",
+            str(inputdata_root),
+            "--check",
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=subdir.parent,
+        )
+
+        # Verify failure
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
+        assert "directory" in result.stderr
+        assert "not a file" in result.stderr
+
+        # Verify --check does NOT claim the directory is already published / downloadable
+        assert "already published" not in result.stdout.lower()
+        assert "available for download" not in result.stdout.lower()
+
+        # Verify the tree is intact
+        assert subdir.is_dir() and not subdir.is_symlink()
+        assert not list(inputdata_root.rglob("*.tmp"))
+        assert inner_file.read_text() == "clm2 data"

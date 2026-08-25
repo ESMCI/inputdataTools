@@ -186,12 +186,15 @@ def stage_data(
         RuntimeError: If `src` is a live symlink pointing outside staging, or if `src` is outside
                       the inputdata root, or if `src` is already under staging directory.
         RuntimeError: If `src` is a broken symlink.
+        RuntimeError: If `src` is a directory (or a symlink to one).
         RuntimeError: If it failed to replace `src` with a symlink to the staged file.
         FileNotFoundError: If `src` does not exist.
 
     Guardrails:
         * Raise if `src` is a *live* symlink to a file outside staging root ("outside staging").
         * Raise if `src` is a broken symlink or is outside the inputdata root.
+        * Raise if `src` is a directory, so a directory source can never reach the
+          replace-with-symlink path (which assumes a regular file and mangles a directory).
     """
     if src.is_symlink():
         if not os.path.exists(src.resolve()):
@@ -209,6 +212,9 @@ def stage_data(
 
     if not src.exists():
         raise FileNotFoundError(f"source not found: {src}")
+
+    if src.is_dir():
+        raise RuntimeError(f"source is a directory, not a file: {src}")
 
     try:
         rel = src.resolve().relative_to(inputdata_root.resolve())
