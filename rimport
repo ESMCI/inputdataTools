@@ -386,8 +386,23 @@ def get_files_to_process(
         int:  Result code
     """
     root_resolved = Path(inputdata_root).expanduser().resolve()
-    cwd = Path.cwd().resolve()
-    cwd_inside = cwd.is_relative_to(root_resolved)
+    try:
+        cwd = Path.cwd().resolve()
+        cwd_inside = cwd.is_relative_to(root_resolved)
+    except OSError:
+        # cwd may have been deleted out from under the process (FileNotFoundError, itself an
+        # OSError). We can't anchor to a cwd we can't determine, so treat this the same as
+        # "cwd is outside the tree": fall back to the pre-existing root-relative behavior
+        # instead of letting the exception propagate.
+        cwd = None
+        cwd_inside = False
+        cli_args = ([file] if file is not None else []) + list(items_to_process or [])
+        if any(not Path(name).is_absolute() for name in cli_args):
+            logger.warning(
+                "rimport: could not determine the current working directory (it may have "
+                "been deleted); relative --file/positional names will be resolved against "
+                "the inputdata root instead of cwd"
+            )
 
     def _anchor_cli(name):
         if Path(name).is_absolute():

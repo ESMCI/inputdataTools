@@ -640,3 +640,60 @@ class TestGetRelnamesToProcess:
         # Verify
         assert result == 0
         assert files_to_process == [str(real_sub.resolve() / filename)]
+
+    def test_deleted_cwd_with_absolute_names_still_works(self, tmp_path, monkeypatch, caplog):
+        """Test that a deleted cwd does not raise: absolute names are returned unchanged since
+        cwd is irrelevant to resolving them. Simulates a deleted cwd for real (not mocked): chdir
+        into a directory, then remove it out from under the process (confirmed to actually raise
+        FileNotFoundError from Path.cwd() on this platform before writing this test)."""
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        abs_file = str(inputdata_root / "test.nc")
+
+        deleted_dir = tmp_path / "deleted"
+        deleted_dir.mkdir()
+        monkeypatch.chdir(deleted_dir)
+        deleted_dir.rmdir()
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=abs_file,
+            filelist=None,
+            items_to_process=None,
+            inputdata_root=inputdata_root,
+        )
+
+        # Verify
+        assert result == 0
+        assert files_to_process == [abs_file]
+        # No warning: the cwd being undeterminable doesn't matter for absolute names
+        assert "working directory" not in caplog.text.lower()
+
+    def test_deleted_cwd_with_relative_names_falls_back_to_root(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """Test that a deleted cwd does not raise for relative names either: since cwd can't be
+        determined, relative names are left unanchored for normalize_paths to later resolve
+        against inputdata_root (the pre-existing legacy behavior), rather than raising."""
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        filename = "test.nc"
+
+        deleted_dir = tmp_path / "deleted"
+        deleted_dir.mkdir()
+        monkeypatch.chdir(deleted_dir)
+        deleted_dir.rmdir()
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=filename,
+            filelist=None,
+            items_to_process=None,
+            inputdata_root=inputdata_root,
+        )
+
+        # Verify
+        assert result == 0
+        assert files_to_process == [filename]
+        # Relative names ARE affected (resolved against the root, not cwd, once staged) -- warn
+        assert "working directory" in caplog.text.lower()
