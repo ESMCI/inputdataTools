@@ -506,6 +506,188 @@ class TestRimportCommandLine:
         assert "Created symbolic link".lower() not in result.stdout.lower()
         assert "Error creating symlink".lower() not in result.stdout.lower()
 
+    def test_relative_file_from_inputdata_subdir_stages_that_file(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a relative positional filename anchors to cwd when rimport is run from
+        inside an inputdata subdirectory, staging the file that is actually there rather than
+        a same-named decoy file at the inputdata root."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        subdir = inputdata_root / "lnd" / "clm2"
+        subdir.mkdir(parents=True)
+
+        subdir_file = subdir / "test.nc"
+        subdir_file.write_text("subdir data")
+
+        decoy_file = inputdata_root / "test.nc"
+        decoy_file.write_text("decoy data")
+
+        # Run rimport with a relative positional filename, from inside the subdir
+        command = [
+            sys.executable,
+            rimport_script,
+            "test.nc",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=subdir,
+        )
+
+        # Verify success
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Verify the subdir file (not the decoy) was staged
+        staged_file = staging_root / "lnd" / "clm2" / "test.nc"
+        assert staged_file.exists()
+        assert staged_file.read_text() == "subdir data"
+
+        # Verify the subdir file was relinked
+        assert subdir_file.is_symlink()
+        assert subdir_file.resolve() == staged_file
+
+        # Verify the decoy at the inputdata root was left untouched
+        assert not decoy_file.is_symlink()
+        assert decoy_file.read_text() == "decoy data"
+
+        # Verify nothing was staged at the root-anchored path
+        assert not (staging_root / "test.nc").exists()
+
+    def test_relative_file_from_subdir_missing_errors_no_root_fallback(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a relative positional filename run from an inputdata subdirectory errors
+        when the file isn't there, rather than falling back to a same-named file at the root."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        subdir = inputdata_root / "lnd" / "clm2"
+        subdir.mkdir(parents=True)
+
+        root_file = inputdata_root / "test.nc"
+        root_file.write_text("root data")
+
+        # Run rimport with a relative positional filename, from inside the subdir
+        command = [
+            sys.executable,
+            rimport_script,
+            "test.nc",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=subdir,
+        )
+
+        # Verify failure
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
+        assert "source not found" in result.stderr
+
+        # Verify the root file was left untouched
+        assert not root_file.is_symlink()
+        assert root_file.read_text() == "root data"
+
+        # Verify nothing was staged
+        assert not any(staging_root.iterdir())
+
+    def test_relative_file_from_outside_tree_resolves_against_root(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a relative positional filename still resolves against the inputdata root,
+        as before, when rimport is run from outside the inputdata tree."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+        tmp_path = test_env["tmp_path"]
+
+        test_file = inputdata_root / "test.nc"
+        test_file.write_text("root data")
+
+        # Run rimport with a relative positional filename, from outside the tree
+        command = [
+            sys.executable,
+            rimport_script,
+            "test.nc",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=tmp_path,
+        )
+
+        # Verify success
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Verify the file was staged, resolved against the inputdata root
+        staged_file = staging_root / "test.nc"
+        assert staged_file.exists()
+        assert staged_file.read_text() == "root data"
+
+        # Verify file was relinked
+        assert test_file.is_symlink()
+        assert test_file.resolve() == staged_file
+
+    def test_dotdot_escape_from_subdir_errors(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a '..'-escaping relative filename, anchored lexically to cwd, is rejected
+        by stage_data's existing outside-the-root guardrail."""
+        inputdata_root = test_env["inputdata_root"]
+        tmp_path = test_env["tmp_path"]
+
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+
+        # File must exist, or the "source not found" check fires before the guardrail and the
+        # "not under inputdata root" message never appears.
+        outside_file = tmp_path / "outside.nc"
+        outside_file.write_text("outside data")
+
+        # Run rimport with an escaping relative positional filename, from inside the subdir
+        command = [
+            sys.executable,
+            rimport_script,
+            "../../outside.nc",
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+            cwd=subdir,
+        )
+
+        # Verify failure
+        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
+        assert "not under inputdata root" in result.stderr
+
+        # Verify the outside file was left untouched
+        assert not outside_file.is_symlink()
+        assert outside_file.read_text() == "outside data"
+
     def test_check_doesnt_relink_published(self, rimport_script, test_env, rimport_env):
         """Test that published file is not relinked if check is True."""
         inputdata_root = test_env["inputdata_root"]

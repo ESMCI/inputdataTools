@@ -331,22 +331,44 @@ def print_can_file_be_downloaded(file_can_be_downloaded: bool):
         logger.info("%sFile is not (yet) available for download.", INDENT)
 
 
-def get_files_to_process(file: str, filelist: str, items_to_process: list):
+def get_files_to_process(
+    file: str, filelist: str, items_to_process: list, inputdata_root: Path
+):
     """Get list of files to process.
 
     Uses --file and/or --filelist arguments, as well as positional items_to_process if given.
+
+    Non-absolute `file` and `items_to_process` entries are CLI args: if cwd is inside the
+    inputdata tree (the root itself counts), they are anchored (eagerly, absolute) to cwd,
+    with no fallback to the root. If cwd is outside the tree, they are left unchanged for
+    normalize_paths to later resolve against `inputdata_root`, as before. `--list` entries are
+    untouched here; they keep resolving against the root (list-relative anchoring is handled
+    elsewhere).
 
     Args:
         file (str): Single file to process.
         filelist (str): File containing list of files to process.
         items_to_process (list): List of files to process.
+        inputdata_root (Path): Root of the inputdata tree, used to decide whether cwd is inside
+            it and, if so, to anchor relative CLI-arg names against cwd.
 
     Returns:
         list: List of files to process
         int:  Result code
     """
+    root_resolved = Path(inputdata_root).expanduser().resolve()
+    cwd = Path.cwd().resolve()
+    cwd_inside = cwd.is_relative_to(root_resolved)
+
+    def _anchor_cli(name):
+        if Path(name).is_absolute():
+            return name
+        if cwd_inside:
+            return str(cwd / name)  # strict: NO fallback to root
+        return name  # legacy: normalize_paths joins onto root later
+
     if file is not None:
-        files_to_process = [file]
+        files_to_process = [_anchor_cli(file)]
     else:
         files_to_process = []
 
@@ -362,7 +384,7 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
         files_to_process.extend(files_in_list)
 
     if items_to_process:
-        files_to_process.extend(items_to_process)
+        files_to_process.extend(_anchor_cli(item) for item in items_to_process)
 
     if not files_to_process:
         logger.error("rimport: At least one of --file or --filelist is required")
@@ -412,7 +434,9 @@ def main(argv: List[str] | None = None) -> int:
         return 2
 
     # Determine the list of relative filenames to handle
-    files_to_process, status = get_files_to_process(args.file, args.filelist, args.items_to_process)
+    files_to_process, status = get_files_to_process(
+        args.file, args.filelist, args.items_to_process, root
+    )
     if status:
         return status
 
