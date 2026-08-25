@@ -78,7 +78,8 @@ class TestGetRelnamesToProcess:
         assert files_to_process == [test_file]
 
     def test_filelist_relpath_with_relpaths(self, tmp_path):
-        """Test giving it a file list by its relative path, containing relative paths"""
+        """Test giving it a file list (outside tree) by its relative path, containing relative
+        paths: fatal error, since the list file is outside the inputdata tree"""
         # Setup
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
@@ -104,11 +105,12 @@ class TestGetRelnamesToProcess:
         )
 
         # Verify
-        assert result == 0
-        assert files_to_process == filenames
+        assert result == 2
+        assert files_to_process is None
 
     def test_filelist_abspath_with_relpaths(self, tmp_path):
-        """Test giving it a file list by its absolute path, containing relative paths"""
+        """Test giving it a file list (outside tree) by its absolute path, containing relative
+        paths: fatal error, since the list file is outside the inputdata tree"""
         # Setup
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
@@ -133,8 +135,8 @@ class TestGetRelnamesToProcess:
         )
 
         # Verify
-        assert result == 0
-        assert files_to_process == filenames
+        assert result == 2
+        assert files_to_process is None
 
     def test_filelist_relpath_with_abspaths(self, tmp_path):
         """Test giving it a file list by its relative path, containing absolute paths"""
@@ -173,6 +175,105 @@ class TestGetRelnamesToProcess:
         inputdata_root.mkdir()
         staging_root = tmp_path / "staging"
         staging_root.mkdir()
+
+        filenames = []
+        for i in range(2):
+            filename = inputdata_root / f"test{i}.txt"
+            filenames.append(str(filename))
+            filename.write_text("def567")
+
+        filelist = tmp_path / "file_list.txt"
+        filelist.write_text("\n".join(filenames), encoding="utf8")
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=None,
+            filelist=filelist,
+            items_to_process=None,
+            inputdata_root=inputdata_root,
+        )
+
+        # Verify
+        assert result == 0
+        assert files_to_process == filenames
+
+    def test_list_inside_tree_relative_entries_anchored_to_list_dir(self, tmp_path):
+        """Test that relative entries in a list file inside the tree anchor to the list file's
+        own directory, not the inputdata root"""
+        # Setup
+        inputdata_root = tmp_path / "inputdata"
+        list_dir = inputdata_root / "lnd"
+        list_dir.mkdir(parents=True)
+
+        filenames = ["clm2/file1.nc", "file2.nc"]
+        filelist = list_dir / "filelist.txt"
+        filelist.write_text("\n".join(filenames), encoding="utf8")
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=None,
+            filelist=filelist,
+            items_to_process=None,
+            inputdata_root=inputdata_root,
+        )
+
+        # Verify
+        assert result == 0
+        list_dir_resolved = list_dir.resolve()
+        assert files_to_process == [str(list_dir_resolved / f) for f in filenames]
+
+    def test_list_at_root_relative_entries_anchored_to_root(self, tmp_path):
+        """Test that a list file located at the inputdata root itself (root counts as inside the
+        tree) anchors relative entries to the root"""
+        # Setup
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+
+        filenames = ["test0.txt", "test1.txt"]
+        filelist = inputdata_root / "filelist.txt"
+        filelist.write_text("\n".join(filenames), encoding="utf8")
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=None,
+            filelist=filelist,
+            items_to_process=None,
+            inputdata_root=inputdata_root,
+        )
+
+        # Verify
+        assert result == 0
+        root_resolved = inputdata_root.resolve()
+        assert files_to_process == [str(root_resolved / f) for f in filenames]
+
+    def test_list_outside_tree_relative_entry_errors(self, tmp_path, caplog):
+        """Test that a relative entry in a list file outside the tree is a fatal error"""
+        # Setup
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+
+        filelist = tmp_path / "filelist.txt"
+        filelist.write_text("relative_file.nc\n", encoding="utf8")
+
+        # Run
+        files_to_process, result = rimport.get_files_to_process(
+            file=None,
+            filelist=filelist,
+            items_to_process=None,
+            inputdata_root=inputdata_root,
+        )
+
+        # Verify
+        assert result == 2
+        assert files_to_process is None
+        assert "relative_file.nc" in caplog.text
+        assert str(filelist.resolve()) in caplog.text
+
+    def test_list_outside_tree_absolute_entries_ok(self, tmp_path):
+        """Test that a list file outside the tree still works when all entries are absolute"""
+        # Setup
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
 
         filenames = []
         for i in range(2):
@@ -330,7 +431,7 @@ class TestGetRelnamesToProcess:
             filenames.append(f)
             (inputdata_root / f).write_text("def567")
 
-        filelist = tmp_path / "file_list.txt"
+        filelist = inputdata_root / "file_list.txt"
         filelist.write_text("\n".join(filenames), encoding="utf8")
 
         # cwd outside the inputdata tree: relative `file` name stays unanchored
@@ -346,7 +447,9 @@ class TestGetRelnamesToProcess:
 
         # Verify
         assert result == 0
-        assert files_to_process == [filename] + filenames
+        assert files_to_process == [filename] + [
+            str(inputdata_root.resolve() / f) for f in filenames
+        ]
 
     def test_single_or_filelist_or_list_required(self, tmp_path):
         """Test that at least one of file, filelist, items_to_process is required"""

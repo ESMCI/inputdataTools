@@ -86,7 +86,7 @@ class TestMain:
         inputdata_root.mkdir()
         staging_root = tmp_path / "staging"
         staging_root.mkdir()
-        filelist = tmp_path / "files.txt"
+        filelist = inputdata_root / "files.txt"
         filelist.write_text("file1.nc\nfile2.nc\n")
 
         mock_get_staging_root.return_value = staging_root
@@ -104,7 +104,11 @@ class TestMain:
         assert result == 0
         mock_read_filelist.assert_called_once_with(filelist)
         mock_normalize_paths.assert_called_once_with(
-            inputdata_root, ["file1.nc", "file2.nc"]
+            inputdata_root,
+            [
+                str(inputdata_root.resolve() / "file1.nc"),
+                str(inputdata_root.resolve() / "file2.nc"),
+            ],
         )
         assert mock_stage_data.call_count == 2
         check = False

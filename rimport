@@ -341,9 +341,13 @@ def get_files_to_process(
     Non-absolute `file` and `items_to_process` entries are CLI args: if cwd is inside the
     inputdata tree (the root itself counts), they are anchored (eagerly, absolute) to cwd,
     with no fallback to the root. If cwd is outside the tree, they are left unchanged for
-    normalize_paths to later resolve against `inputdata_root`, as before. `--list` entries are
-    untouched here; they keep resolving against the root (list-relative anchoring is handled
-    elsewhere).
+    normalize_paths to later resolve against `inputdata_root`, as before.
+
+    Non-absolute `--list` entries are anchored against the list file's own directory (the root
+    itself counts as inside), not the cwd: if that directory is inside the inputdata tree, a
+    relative entry is resolved (eagerly, absolute) against it; if the list file's directory is
+    outside the tree, a relative entry is a fatal error (relative paths are not allowed in list
+    files outside the inputdata tree).
 
     Args:
         file (str): Single file to process.
@@ -381,7 +385,22 @@ def get_files_to_process(
         if not files_in_list:
             logger.error("rimport: no filenames found in list: %s", list_path)
             return None, 2
-        files_to_process.extend(files_in_list)
+
+        list_base = list_path.parent
+        list_inside = list_base.is_relative_to(root_resolved)
+        for entry in files_in_list:
+            if Path(entry).is_absolute():
+                files_to_process.append(entry)
+            elif list_inside:
+                files_to_process.append(str(list_base / entry))
+            else:
+                logger.error(
+                    "rimport: relative path '%s' not allowed in list file outside "
+                    "the inputdata tree: %s",
+                    entry,
+                    list_path,
+                )
+                return None, 2
 
     if items_to_process:
         files_to_process.extend(_anchor_cli(item) for item in items_to_process)

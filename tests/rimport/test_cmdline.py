@@ -100,9 +100,9 @@ class TestRimportCommandLine:
         file1.write_text("data1")
         file2.write_text("data2")
 
-        # Create filelist
+        # Create filelist (outside the tree: entries must be absolute)
         filelist = tmp_path / "filelist.txt"
-        filelist.write_text("file1.nc\nfile2.nc\n")
+        filelist.write_text(f"{file1}\n{file2}\n")
 
         # Run rimport with -list option
         command = [
@@ -136,6 +136,95 @@ class TestRimportCommandLine:
         assert file1.resolve() == (staging_root / "file1.nc")
         assert file2.is_symlink()
         assert file2.resolve() == (staging_root / "file2.nc")
+
+    def test_list_inside_tree_relative_entries(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a list file inside the inputdata tree anchors relative entries to the
+        list file's own directory, not the inputdata root."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        # Create nested file and a list file alongside it inside the tree
+        nested_file = inputdata_root / "lnd" / "clm2" / "file1.nc"
+        nested_file.parent.mkdir(parents=True)
+        nested_file.write_text("nested data")
+
+        filelist = inputdata_root / "lnd" / "filelist.txt"
+        filelist.write_text("clm2/file1.nc\n")
+
+        # Run rimport with -list option
+        command = [
+            sys.executable,
+            rimport_script,
+            "-list",
+            str(filelist),
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify success
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Verify the file was staged, anchored to the list dir's own subtree
+        staged_file = staging_root / "lnd" / "clm2" / "file1.nc"
+        assert staged_file.exists()
+        assert staged_file.read_text() == "nested data"
+
+        # Verify file was relinked
+        assert nested_file.is_symlink()
+        assert nested_file.resolve() == staged_file
+
+    def test_list_outside_tree_relative_entry_error(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that a relative entry in a list file outside the tree is a fatal error."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+        tmp_path = test_env["tmp_path"]
+
+        # Create the file that would be staged if this succeeded
+        test_file = inputdata_root / "file1.nc"
+        test_file.write_text("data1")
+
+        # Create filelist OUTSIDE the tree with a relative entry
+        filelist = tmp_path / "filelist.txt"
+        filelist.write_text("file1.nc\n")
+
+        # Run rimport with -list option
+        command = [
+            sys.executable,
+            rimport_script,
+            "-list",
+            str(filelist),
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify fatal error, naming both the offending entry and the list file
+        assert result.returncode == 2
+        assert "file1.nc" in result.stderr
+        assert str(filelist.resolve()) in result.stderr
+
+        # Verify nothing was staged or symlinked
+        assert not (staging_root / "file1.nc").exists()
+        assert not test_file.is_symlink()
 
     def test_preserves_directory_structure(self, rimport_script, test_env, rimport_env):
         """Test that directory structure is preserved in staging."""
@@ -293,9 +382,9 @@ class TestRimportCommandLine:
         file1.write_text("data1")
         file2.write_text("data2")
 
-        # Create filelist with comments and blanks
+        # Create filelist with comments and blanks (outside the tree: entries must be absolute)
         filelist = tmp_path / "filelist.txt"
-        filelist.write_text("# Comment\nfile1.nc\n\n# Another comment\nfile2.nc\n")
+        filelist.write_text(f"# Comment\n{file1}\n\n# Another comment\n{file2}\n")
 
         # Run rimport
         command = [
