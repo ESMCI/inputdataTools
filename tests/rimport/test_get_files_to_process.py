@@ -2,6 +2,7 @@
 Tests for get_files_to_process function in rimport script.
 """
 
+import logging
 import os
 import importlib.util
 from importlib.machinery import SourceFileLoader
@@ -309,6 +310,7 @@ class TestGetRelnamesToProcess:
         assert files_to_process is None
         assert "relative_file.nc" in caplog.text
         assert str(filelist.resolve()) in caplog.text
+        assert "use absolute paths or move the list file" in caplog.text
 
     def test_list_outside_tree_absolute_entries_ok(self, tmp_path):
         """Test that a list file outside the tree still works when all entries are absolute"""
@@ -646,6 +648,7 @@ class TestGetRelnamesToProcess:
         cwd is irrelevant to resolving them. Simulates a deleted cwd for real (not mocked): chdir
         into a directory, then remove it out from under the process (confirmed to actually raise
         FileNotFoundError from Path.cwd() on this platform before writing this test)."""
+        # Setup
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
         abs_file = str(inputdata_root / "test.nc")
@@ -656,12 +659,13 @@ class TestGetRelnamesToProcess:
         deleted_dir.rmdir()
 
         # Run
-        files_to_process, result = rimport.get_files_to_process(
-            file=abs_file,
-            filelist=None,
-            items_to_process=None,
-            inputdata_root=inputdata_root,
-        )
+        with caplog.at_level(logging.WARNING):
+            files_to_process, result = rimport.get_files_to_process(
+                file=abs_file,
+                filelist=None,
+                items_to_process=None,
+                inputdata_root=inputdata_root,
+            )
 
         # Verify
         assert result == 0
@@ -675,6 +679,7 @@ class TestGetRelnamesToProcess:
         """Test that a deleted cwd does not raise for relative names either: since cwd can't be
         determined, relative names are left unanchored for normalize_paths to later resolve
         against inputdata_root (the pre-existing legacy behavior), rather than raising."""
+        # Setup
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
         filename = "test.nc"
@@ -685,12 +690,13 @@ class TestGetRelnamesToProcess:
         deleted_dir.rmdir()
 
         # Run
-        files_to_process, result = rimport.get_files_to_process(
-            file=filename,
-            filelist=None,
-            items_to_process=None,
-            inputdata_root=inputdata_root,
-        )
+        with caplog.at_level(logging.WARNING):
+            files_to_process, result = rimport.get_files_to_process(
+                file=filename,
+                filelist=None,
+                items_to_process=None,
+                inputdata_root=inputdata_root,
+            )
 
         # Verify
         assert result == 0
