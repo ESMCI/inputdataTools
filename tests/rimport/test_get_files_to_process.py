@@ -648,7 +648,6 @@ class TestGetRelnamesToProcess:
         cwd is irrelevant to resolving them. Simulates a deleted cwd for real (not mocked): chdir
         into a directory, then remove it out from under the process (confirmed to actually raise
         FileNotFoundError from Path.cwd() on this platform before writing this test)."""
-        # Setup
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
         abs_file = str(inputdata_root / "test.nc")
@@ -679,7 +678,6 @@ class TestGetRelnamesToProcess:
         """Test that a deleted cwd does not raise for relative names either: since cwd can't be
         determined, relative names are left unanchored for normalize_paths to later resolve
         against inputdata_root (the pre-existing legacy behavior), rather than raising."""
-        # Setup
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
         filename = "test.nc"
