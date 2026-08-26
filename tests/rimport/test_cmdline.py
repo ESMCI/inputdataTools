@@ -100,7 +100,7 @@ class TestRimportCommandLine:
         file1.write_text("data1")
         file2.write_text("data2")
 
-        # Create filelist (outside the tree: entries must be absolute)
+        # Create filelist (outside the tree; absolute entries)
         filelist = tmp_path / "filelist.txt"
         filelist.write_text(f"{file1}\n{file2}\n")
 
@@ -404,7 +404,7 @@ class TestRimportCommandLine:
         file1.write_text("data1")
         file2.write_text("data2")
 
-        # Create filelist with comments and blanks (outside the tree: entries must be absolute)
+        # Create filelist with comments and blanks (outside the tree; absolute entries)
         filelist = tmp_path / "filelist.txt"
         filelist.write_text(f"# Comment\n{file1}\n\n# Another comment\n{file2}\n")
 
