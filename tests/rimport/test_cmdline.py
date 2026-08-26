@@ -307,9 +307,12 @@ class TestRimportCommandLine:
             env=rimport_env,
         )
 
-        # Verify error
+        # Verify error. Assert the actual reason, not the substring "error": pre-flight
+        # reports "N of M file(s) failed pre-flight validation", which contains no such
+        # word, so a bare "error" check is satisfied only by tmp_path echoing this test's
+        # own name back in the offending path.
         assert result.returncode != 0
-        assert "error" in result.stderr.lower()
+        assert "source not found" in result.stderr
 
     def test_error_for_nonexistent_list_file(
         self, rimport_script, test_env, rimport_env
@@ -810,8 +813,8 @@ class TestRimportCommandLine:
         self, rimport_script, test_env, rimport_env
     ):
         """Test that a '..'-escaping relative entry in a list file INSIDE the tree is rejected
-        by stage_data's existing outside-the-root guardrail. This is the list-side twin of
-        test_dotdot_escape_from_subdir_errors above."""
+        by validate_source_path's outside-the-root guardrail, via main()'s pre-flight gate.
+        This is the list-side twin of test_dotdot_escape_from_subdir_errors above."""
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
         tmp_path = test_env["tmp_path"]
@@ -846,8 +849,9 @@ class TestRimportCommandLine:
             env=rimport_env,
         )
 
-        # Verify failure
-        assert result.returncode == 1, f"Command unexpectedly passed: {result.stdout}"
+        # Verify failure. rc 2 (not 1): pre-flight validation catches this before anything is
+        # staged, rather than the per-file loop catching it after some files may have run.
+        assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
         assert "not under inputdata root" in result.stderr
 
         # Verify nothing was staged
@@ -1059,3 +1063,125 @@ class TestRimportCommandLine:
         assert subdir.is_dir() and not subdir.is_symlink()
         assert not list(inputdata_root.rglob("*.tmp"))
         assert inner_file.read_text() == "clm2 data"
+
+    def test_mixed_validity_list_aborts_and_stages_nothing(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test the pre-flight gate end to end: a --list with one valid entry and two entries
+        that are invalid in DIFFERENT ways (missing, and a directory) aborts the whole batch
+        with rc 2, reports every failure reason, gets the "N of M" count right, and — the
+        assertion that matters most — never stages or relinks the valid entry.
+
+        The list file lives OUTSIDE the inputdata tree with absolute entries (this configuration
+        previously had no end-to-end coverage at all)."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+        tmp_path = test_env["tmp_path"]
+
+        valid_file = inputdata_root / "good.nc"
+        valid_file.write_text("good data")
+
+        missing_file = inputdata_root / "missing.nc"
+
+        bad_dir = inputdata_root / "adir"
+        bad_dir.mkdir()
+
+        # List file OUTSIDE the tree, with absolute entries.
+        filelist = tmp_path / "filelist.txt"
+        filelist.write_text(f"{valid_file}\n{missing_file}\n{bad_dir}\n")
+
+        command = [
+            sys.executable,
+            rimport_script,
+            "-list",
+            str(filelist),
+            "-inputdata",
+            str(inputdata_root),
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify failure: rc 2, all reasons present, correct "N of M" count
+        assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
+        assert "2 of 3 file(s) failed pre-flight validation" in result.stderr
+        assert f"source not found: {missing_file}" in result.stderr
+        assert f"source is a directory, not a file: {bad_dir}" in result.stderr
+
+        # Verify the valid file was NOT staged and NOT turned into a symlink
+        assert not (staging_root / "good.nc").exists()
+        assert not valid_file.is_symlink()
+        assert valid_file.read_text() == "good data"
+
+        # Verify nothing at all was staged
+        assert not any(staging_root.rglob("*"))
+
+    def test_check_mode_is_gated_too_and_reports_nothing_for_valid_entry(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test that --check is subject to the same pre-flight gate as a real run: a mix of
+        valid and invalid entries aborts with rc 2 and the valid entry's status is NOT
+        reported.
+
+        This pins a deliberate design decision (uniform abort, chosen over per-file --check
+        reporting, even though it means a --check run tells you nothing about the files that
+        would have been fine) — a future reader should not "fix" this into per-file --check
+        reporting without first re-litigating that choice with the repo owner."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+        tmp_path = test_env["tmp_path"]
+
+        valid_file = inputdata_root / "good.nc"
+        valid_file.write_text("good data")
+
+        missing_file = inputdata_root / "missing.nc"
+
+        bad_dir = inputdata_root / "adir"
+        bad_dir.mkdir()
+
+        # List file OUTSIDE the tree, with absolute entries.
+        filelist = tmp_path / "filelist.txt"
+        filelist.write_text(f"{valid_file}\n{missing_file}\n{bad_dir}\n")
+
+        # Make sure --check skips ensure_running_as()
+        del rimport_env["RIMPORT_SKIP_USER_CHECK"]
+
+        command = [
+            sys.executable,
+            rimport_script,
+            "-list",
+            str(filelist),
+            "-inputdata",
+            str(inputdata_root),
+            "--check",
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        # Verify failure: rc 2, all reasons present
+        assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
+        assert "2 of 3 file(s) failed pre-flight validation" in result.stderr
+        assert f"source not found: {missing_file}" in result.stderr
+        assert f"source is a directory, not a file: {bad_dir}" in result.stderr
+
+        # Verify the valid entry's check status is NOT reported: --check never gets to run
+        # per-file, so neither the "already published" nor "not already published" messages
+        # appear anywhere, for any file.
+        assert "already published" not in result.stdout.lower()
+        assert "not already published" not in result.stdout.lower()
+        assert result.stdout == ""
+
+        # Verify nothing was staged
+        assert not any(staging_root.rglob("*"))
+        assert not valid_file.is_symlink()

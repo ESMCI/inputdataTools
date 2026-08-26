@@ -30,6 +30,7 @@ loader.exec_module(rimport)
 class TestMain:
     """Test suite for main() function."""
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -40,6 +41,7 @@ class TestMain:
         mock_normalize_paths,
         mock_get_staging_root,
         mock_stage_data,
+        mock_validate_source_path,
         tmp_path,
         caplog,
     ):
@@ -53,6 +55,9 @@ class TestMain:
         mock_get_staging_root.return_value = staging_root
         test_file = inputdata_root / "test.nc"
         mock_normalize_paths.return_value = [test_file]
+        # test_file doesn't exist on disk; bypass pre-flight so this test still exercises only
+        # main()'s control flow, not validate_source_path's real checks.
+        mock_validate_source_path.return_value = None
 
         # Run
         # Absolute -file removes cwd coupling entirely: get_files_to_process runs for real here
@@ -70,6 +75,7 @@ class TestMain:
         )
         assert "No need to run relink.py" in caplog.text
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -82,6 +88,7 @@ class TestMain:
         mock_normalize_paths,
         mock_get_staging_root,
         mock_stage_data,
+        mock_validate_source_path,
         tmp_path,
     ):
         """Test main() logic flow when a file list stages successfully."""
@@ -98,6 +105,9 @@ class TestMain:
         file1 = inputdata_root / "file1.nc"
         file2 = inputdata_root / "file2.nc"
         mock_normalize_paths.return_value = [file1, file2]
+        # Neither file exists on disk; bypass pre-flight so this test still exercises only
+        # main()'s control flow, not validate_source_path's real checks.
+        mock_validate_source_path.return_value = None
 
         # Run
         result = rimport.main(
@@ -123,6 +133,7 @@ class TestMain:
             ]
         )
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -133,6 +144,7 @@ class TestMain:
         mock_normalize_paths,
         _mock_get_staging_root,
         mock_stage_data,
+        mock_validate_source_path,
         tmp_path,
         capsys,
     ):
@@ -145,6 +157,9 @@ class TestMain:
         file2 = inputdata_root / "file2.nc"
         file3 = inputdata_root / "file3.nc"
         mock_normalize_paths.return_value = [file1, file2, file3]
+        # None of the files exist on disk; bypass pre-flight so this test still exercises only
+        # main()'s per-file error handling, not validate_source_path's real checks.
+        mock_validate_source_path.return_value = None
 
         # Make stage_data fail for file2 but succeed for others
         def stage_data_side_effect(src, *_args, **_kwargs):
@@ -231,6 +246,7 @@ class TestMain:
         captured = capsys.readouterr()
         assert "At least one of --file or --filelist is required" in captured.err
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -241,6 +257,7 @@ class TestMain:
         mock_normalize_paths,
         mock_get_staging_root,
         mock_stage_data,
+        mock_validate_source_path,
         tmp_path,
         caplog,
     ):
@@ -253,6 +270,9 @@ class TestMain:
         mock_get_staging_root.return_value = staging_root
         test_file = inputdata_root / "test.nc"
         mock_normalize_paths.return_value = [test_file]
+        # test_file doesn't exist on disk; bypass pre-flight (which runs in --check mode too)
+        # so this test still exercises only main()'s control flow.
+        mock_validate_source_path.return_value = None
 
         result = rimport.main(
             ["-file", "test.nc", "-inputdata", str(inputdata_root), "--check"]
@@ -269,6 +289,7 @@ class TestMain:
         # Message about relink.py should not have been printed
         assert "No need to run relink.py" not in caplog.text
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -279,6 +300,7 @@ class TestMain:
         mock_normalize_paths,
         _mock_get_staging_root,
         _mock_stage,
+        mock_validate_source_path,
         tmp_path,
         monkeypatch,
     ):
@@ -290,6 +312,9 @@ class TestMain:
 
         test_file = inputdata_root / "test.nc"
         mock_normalize_paths.return_value = [test_file]
+        # test_file doesn't exist on disk; bypass pre-flight so this test still exercises only
+        # the user-check skip logic.
+        mock_validate_source_path.return_value = None
 
         result = rimport.main(["-file", "test.nc", "-inputdata", str(inputdata_root)])
 
@@ -297,6 +322,7 @@ class TestMain:
         # ensure_running_as should NOT be called when env var is set
         mock_ensure_running_as.assert_not_called()
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -307,6 +333,7 @@ class TestMain:
         mock_normalize_paths,
         _mock_get_staging_root,
         _mock_stage,
+        mock_validate_source_path,
         tmp_path,
         capsys,
     ):
@@ -316,6 +343,9 @@ class TestMain:
         file1 = inputdata_root / "file1.nc"
         file2 = inputdata_root / "file2.nc"
         mock_normalize_paths.return_value = [file1, file2]
+        # Neither file exists on disk; bypass pre-flight so this test still exercises only the
+        # per-file print, not validate_source_path's real checks.
+        mock_validate_source_path.return_value = None
 
         result = rimport.main(["-file", "test.nc", "-inputdata", str(inputdata_root)])
 
@@ -325,6 +355,7 @@ class TestMain:
         assert f"'{file1}':" in captured.out
         assert f"'{file2}':" in captured.out
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -335,6 +366,7 @@ class TestMain:
         mock_normalize_paths,
         _mock_get_staging_root,
         mock_stage_data,
+        mock_validate_source_path,
         tmp_path,
     ):
         """Test that main() returns 1 when multiple files fail."""
@@ -345,6 +377,9 @@ class TestMain:
         file2 = inputdata_root / "file2.nc"
         file3 = inputdata_root / "file3.nc"
         mock_normalize_paths.return_value = [file1, file2, file3]
+        # None of the files exist on disk; bypass pre-flight so this test still exercises the
+        # per-file loop's runtime-error handling, not validate_source_path's real checks.
+        mock_validate_source_path.return_value = None
 
         # Make all files fail
         mock_stage_data.side_effect = RuntimeError("Test error")
@@ -354,6 +389,7 @@ class TestMain:
         assert result == 1
         assert mock_stage_data.call_count == 3
 
+    @patch.object(rimport, "validate_source_path")
     @patch.object(rimport, "stage_data")
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "normalize_paths")
@@ -364,6 +400,7 @@ class TestMain:
         mock_normalize_paths,
         _mock_get_staging_root,
         mock_stage_data,
+        mock_validate_source_path,
         tmp_path,
         capsys,
     ):
@@ -373,6 +410,9 @@ class TestMain:
 
         files = [inputdata_root / f"file{i}.nc" for i in range(5)]
         mock_normalize_paths.return_value = files
+        # None of the files exist on disk; bypass pre-flight so this test still exercises only
+        # the per-file error counter, not validate_source_path's real checks.
+        mock_validate_source_path.return_value = None
 
         # Make files 1 and 3 fail
         def stage_data_side_effect(src, *_args, **_kwargs):
@@ -465,3 +505,56 @@ class TestMain:
         captured = capsys.readouterr()
         assert "rimport: error processing" in captured.err
         assert "Error relinking during rimport" in captured.err
+
+    @patch.object(rimport, "stage_data")
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_preflight_gate_rejects_whole_batch_and_never_calls_stage_data(
+        self,
+        _mock_ensure_running_as,
+        mock_get_staging_root,
+        mock_stage_data,
+        tmp_path,
+        capsys,
+    ):
+        """Test main()'s pre-flight gate: a batch with a mix of valid and invalid paths returns
+        2, logs every failure, and never calls stage_data — not even for the valid path.
+
+        Unlike the other main() tests in this file, this one does NOT mock
+        validate_source_path (or normalize_paths): it lets the real pre-flight gate run
+        against real files, so it is actually exercising the gate rather than assuming it
+        works.
+        """
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+
+        valid = inputdata_root / "good.nc"
+        valid.write_text("data")
+        missing = inputdata_root / "missing.nc"
+        bad_dir = inputdata_root / "adir"
+        bad_dir.mkdir()
+
+        result = rimport.main(
+            [
+                "-inputdata",
+                str(inputdata_root),
+                str(valid),
+                str(missing),
+                str(bad_dir),
+            ]
+        )
+
+        assert result == 2
+        mock_stage_data.assert_not_called()
+
+        captured = capsys.readouterr()
+        assert "2 of 3 file(s) failed pre-flight validation" in captured.err
+        assert f"source not found: {missing}" in captured.err
+        assert f"source is a directory, not a file: {bad_dir}" in captured.err
+
+        # The valid file was never staged or turned into a symlink.
+        assert not (staging_root / "good.nc").exists()
+        assert not valid.is_symlink()

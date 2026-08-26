@@ -169,6 +169,67 @@ def check_relink_worked(src: Path, dst: Path) -> None:
         raise RuntimeError("Error relinking during rimport")
 
 
+def validate_source_path(
+    src: Path, inputdata_root: Path, staging_root: Path
+) -> Exception | None:
+    """Run stage_data's read-only guardrails against `src` without raising or logging.
+
+    This is the pre-flight half of `stage_data`'s checks: broken symlink, live symlink whose
+    target is outside staging, missing file, directory, outside the inputdata root, and already
+    under the staging directory. It performs no I/O beyond stat-ing `src` and its resolved
+    target — in particular it never makes a network call — so it is cheap to run over an entire
+    batch before anything is staged.
+
+    Critically, a *live* symlink whose target resolves under `staging_root` is NOT a failure:
+    that is the normal state of a file that has already been published and linked by a previous
+    run, and is treated here exactly like a plain, stageable file (returns `None`). Re-running
+    rimport over an already-published tree must not report every published file as bad.
+
+    `stage_data` calls this first and raises whatever it returns; `main`'s pre-flight gate calls
+    it over every resolved path before staging anything, so a bad path anywhere in the batch is
+    reported without partially publishing the rest.
+
+    Args:
+        src: Source file path to validate.
+        inputdata_root: Root directory of the inputdata tree.
+        staging_root: Root directory where files will be staged.
+
+    Returns:
+        The exception (unraised) describing why `src` cannot be staged, or `None` if `src` is
+        fine to proceed with — including the already-published-and-linked symlink case.
+    """
+    if src.is_symlink():
+        if not os.path.exists(src.resolve()):
+            return RuntimeError(f"Source is a broken symlink: {src}")
+        if not src.resolve().is_relative_to(staging_root.resolve()):
+            return RuntimeError(
+                f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
+                f"({staging_root})"
+            )
+        # Live symlink already resolving under staging_root: already published and linked.
+        # This is a legitimate no-op, not a validation failure.
+        return None
+
+    if not src.exists():
+        return FileNotFoundError(f"source not found: {src}")
+
+    if src.is_dir():
+        return RuntimeError(f"source is a directory, not a file: {src}")
+
+    try:
+        src.resolve().relative_to(inputdata_root.resolve())
+    except ValueError:
+        if src.resolve().is_relative_to(staging_root.resolve()):
+            return RuntimeError(
+                f"Source file '{src.name}' is already under staging directory '{staging_root}'."
+            )
+        return RuntimeError(
+            f"source not under inputdata root: {src} not in {inputdata_root}"
+        )
+
+    return None
+
+
 def stage_data(
     src: Path, inputdata_root: Path, staging_root: Path, check: bool = False
 ) -> None:
@@ -205,38 +266,26 @@ def stage_data(
           this guardrail: it is handled by the live-symlink guardrails above instead, which for
           a target under `staging_root` log "already published and linked" and return without
           raising, and for a target outside `staging_root` raise (see the first guardrail above).
+
+        These read-only guardrails are delegated to `validate_source_path`, which returns the
+        exception to raise (or None); this function raises whatever comes back. That keeps this
+        function and `main`'s pre-flight gate in permanent agreement about what is stageable,
+        since both call the same check.
     """
+    error = validate_source_path(src, inputdata_root, staging_root)
+    if error is not None:
+        raise error
+
     if src.is_symlink():
-        if not os.path.exists(src.resolve()):
-            raise RuntimeError(f"Source is a broken symlink: {src}")
-        if not src.resolve().is_relative_to(staging_root.resolve()):
-            raise RuntimeError(
-                f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
-                f"({staging_root})"
-            )
+        # validate_source_path only lets a symlink through here when it is live and its target
+        # resolves under staging_root: the "already published and linked" case.
         logger.info("%sFile is already published and linked.", INDENT)
         print_can_file_be_downloaded(
             can_file_be_downloaded(src.resolve(), staging_root)
         )
         return
 
-    if not src.exists():
-        raise FileNotFoundError(f"source not found: {src}")
-
-    if src.is_dir():
-        raise RuntimeError(f"source is a directory, not a file: {src}")
-
-    try:
-        rel = src.resolve().relative_to(inputdata_root.resolve())
-    except ValueError as exc:
-        if src.resolve().is_relative_to(staging_root.resolve()):
-            raise RuntimeError(
-                f"Source file '{src.name}' is already under staging directory '{staging_root}'."
-            ) from exc
-        raise RuntimeError(
-            f"source not under inputdata root: {src} not in {inputdata_root}"
-        ) from exc
-
+    rel = src.resolve().relative_to(inputdata_root.resolve())
     dst = staging_root / rel
 
     if dst.exists():
@@ -490,6 +539,25 @@ def main(argv: List[str] | None = None) -> int:
     # Resolve to full paths (keep accepting absolute names too)
     paths = normalize_paths(root, files_to_process)
     staging_root = get_staging_root()
+
+    # Pre-flight: validate every path before staging anything, so a batch containing a bad
+    # path is reported (all bad paths at once) instead of half-completing. Runs for --check
+    # too: a bad entry aborts the whole batch rather than being reported per-file.
+    failures = []
+    for p in paths:
+        error = validate_source_path(p, root, staging_root)
+        if error is not None:
+            failures.append((p, error))
+    if failures:
+        logger.error(
+            "rimport: %d of %d file(s) failed pre-flight validation; nothing was published:",
+            len(failures),
+            len(paths),
+        )
+        for p, error in failures:
+            logger.error("%srimport: '%s': %s", INDENT, p, error)
+        return 2
+
     # Execute the new action per file
     errors = 0
     for p in paths:
