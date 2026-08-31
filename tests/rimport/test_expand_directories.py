@@ -252,3 +252,55 @@ def test_expansion_count_is_logged_before_any_skip_warning(tmp_path, caplog):
         os.chmod(locked, 0o700)
 
     assert caplog.text.index("expanded 1 director(ies)") < caplog.text.index("skipping")
+
+
+def test_directory_named_twice_is_walked_once(tmp_path, caplog):
+    """Naming the same directory twice is one directory, not two. Counting the walks instead
+    of the directories made the blast-radius line overstate itself."""
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "a.nc").write_text("a")
+
+    with caplog.at_level(logging.INFO, logger="rimport_relink"):
+        rimport.expand_directories([d, d])
+
+    assert "expanded 1 director(ies) to 1 file(s)" in caplog.text
+
+
+def test_duplicate_arguments_do_not_duplicate_a_skip(tmp_path, caplog):
+    """Files de-duplicate; skips did not. Naming a directory twice walked it twice and
+    recorded the same unreadable subdirectory twice, so it was warned twice, listed twice in
+    the end-of-run summary, and counted twice."""
+    d = tmp_path / "d"
+    d.mkdir()
+    locked = d / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="rimport_relink"):
+            _entries, skips = rimport.expand_directories([d, d])
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert len(skips) == 1
+    assert caplog.text.count("skipping") == 1
+
+
+def test_overlapping_named_directories_do_not_duplicate_a_skip(tmp_path):
+    """Same defect by another route: a subdirectory named alongside its parent is walked
+    twice, so anything unreadable beneath it is recorded twice."""
+    d = tmp_path / "d"
+    d.mkdir()
+    sub = d / "sub"
+    sub.mkdir()
+    locked = sub / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        _entries, skips = rimport.expand_directories([d, sub])
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert len(skips) == 1

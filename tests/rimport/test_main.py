@@ -731,6 +731,38 @@ class TestMain:
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
+    def test_naming_an_unreadable_directory_twice_reports_it_once(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """The same path given twice is one bad path, not two. Walking it twice recorded two
+        identical Skips, which inflated both the failure list and the denominator: the user
+        typed two arguments and got "2 of 3 file(s) failed", with one path printed twice."""
+        inputdata_root = tmp_path / "inputdata"
+        locked = inputdata_root / "locked"
+        locked.mkdir(parents=True)
+        other = inputdata_root / "ok"
+        other.mkdir()
+        (other / "good.nc").write_text("good")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(locked), str(locked), str(other)]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        captured = capsys.readouterr()
+        # Two distinct paths were considered: `locked` and the good.nc discovered under `ok`.
+        assert "1 of 2 file(s) failed pre-flight validation" in captured.err
+        assert captured.err.count(str(locked)) == 1
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
     def test_unreadable_subdirectory_stays_a_skip(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
     ):
