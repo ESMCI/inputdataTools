@@ -684,3 +684,73 @@ class TestMain:
         )
 
         assert result == 3
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_named_unreadable_directory_is_fatal_not_a_skip(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A directory the USER NAMED that cannot be read is a named failure, so it aborts
+        the batch -- it must not be demoted to a skip that lets other named arguments
+        publish anyway.
+
+        Skip carries no provenance, so without an explicit check main's gate cannot tell a
+        named unreadable directory from one discovered inside a named tree. Getting this
+        wrong turns a hard stop into a partial publish.
+        """
+        inputdata_root = tmp_path / "inputdata"
+        locked = inputdata_root / "locked"
+        locked.mkdir(parents=True)
+        (locked / "unreachable.nc").write_text("data")
+        other = inputdata_root / "ok"
+        other.mkdir()
+        (other / "good.nc").write_text("good")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(locked), str(other)]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+
+        # The OTHER named argument must not have published.
+        assert not (staging_root / "ok" / "good.nc").exists()
+        assert not (other / "good.nc").is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_unreadable_subdirectory_stays_a_skip(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """The counterpart: an unreadable directory DISCOVERED beneath a named directory is
+        not a named failure, so it stays a warn-and-skip and its readable siblings still
+        publish. This is what stops the fix for the named case from over-reaching."""
+        inputdata_root = tmp_path / "inputdata"
+        tree = inputdata_root / "tree"
+        tree.mkdir(parents=True)
+        (tree / "good.nc").write_text("good")
+        locked = tree / "locked"
+        locked.mkdir()
+        (locked / "unreachable.nc").write_text("data")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(["-inputdata", str(inputdata_root), str(tree)])
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 3
+        assert (staging_root / "tree" / "good.nc").read_text() == "good"
+        captured = capsys.readouterr()
+        assert "skipped (not stageable)" in captured.err
