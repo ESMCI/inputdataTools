@@ -517,8 +517,9 @@ class TestMain:
         tmp_path,
         capsys,
     ):
-        """Test main()'s pre-flight gate: a batch with a mix of valid and invalid paths returns
-        2, logs every failure, and never calls stage_data — not even for the valid path.
+        """Test main()'s pre-flight gate: a batch with a mix of valid and invalid paths
+        (missing, and a broken symlink) returns 2, logs every failure, and never calls
+        stage_data — not even for the valid path.
 
         Unlike the other main() tests in this file, this one does NOT mock
         validate_source_path (or normalize_paths): it lets the real pre-flight gate run
@@ -534,8 +535,8 @@ class TestMain:
         valid = inputdata_root / "good.nc"
         valid.write_text("data")
         missing = inputdata_root / "missing.nc"
-        bad_dir = inputdata_root / "adir"
-        bad_dir.mkdir()
+        broken = inputdata_root / "broken.nc"
+        broken.symlink_to(inputdata_root / "nonexistent_target.nc")
 
         result = rimport.main(
             [
@@ -543,7 +544,7 @@ class TestMain:
                 str(inputdata_root),
                 str(valid),
                 str(missing),
-                str(bad_dir),
+                str(broken),
             ]
         )
 
@@ -553,8 +554,128 @@ class TestMain:
         captured = capsys.readouterr()
         assert "2 of 3 file(s) failed pre-flight validation" in captured.err
         assert f"source not found: {missing}" in captured.err
-        assert f"source is a directory, not a file: {bad_dir}" in captured.err
+        assert f"Source is a broken symlink: {broken}" in captured.err
 
         # The valid file was never staged or turned into a symlink.
         assert not (staging_root / "good.nc").exists()
         assert not valid.is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_directory_argument_stages_the_files_inside_it(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A directory argument publishes the files beneath it, and is never itself staged."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "a.nc").write_text("a")
+        (subdir / "b.nc").write_text("b")
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(subdir)])
+
+        assert result == 0
+        assert (staging_root / "lnd" / "a.nc").read_text() == "a"
+        assert (staging_root / "lnd" / "b.nc").read_text() == "b"
+        assert (subdir / "a.nc").is_symlink()
+        assert subdir.is_dir() and not subdir.is_symlink()
+        assert not (staging_root / "lnd").is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_discovered_failure_warns_skips_and_returns_3(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A bad file FOUND BY A WALK must not abort the batch: the good files still
+        publish, the bad one is skipped, and the run reports 3."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(subdir)])
+
+        assert result == 3
+        assert (staging_root / "lnd" / "good.nc").read_text() == "good"
+        captured = capsys.readouterr()
+        # Reported inline at WARNING (stdout) as the run reaches it...
+        assert "skipping" in captured.out
+        # ...and repeated at ERROR (stderr) at the very end, where it cannot be scrolled past.
+        assert "1 file(s) skipped (not stageable)" in captured.err
+        assert "broken.nc" in captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_named_failure_still_aborts_everything_including_discovered_files(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """Provenance asymmetry: a path the USER typed is still fatal, and it takes the
+        whole batch down with it -- including good files discovered under a good
+        directory."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        missing = inputdata_root / "missing.nc"
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), str(missing)]
+        )
+
+        assert result == 2
+        assert not any(staging_root.rglob("*"))
+        assert not (subdir / "good.nc").is_symlink()
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_staging_error_outranks_skip_in_exit_code(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
+    ):
+        """Precedence 1 > 3: a real staging failure must not be masked by 'completed with
+        skips'."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        with patch.object(rimport, "stage_data", side_effect=RuntimeError("boom")):
+            result = rimport.main(["-inputdata", str(inputdata_root), str(subdir)])
+
+        assert result == 1
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_check_mode_also_returns_3_for_skips(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
+    ):
+        """--check uses the same exit codes, including 3."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), "--check"]
+        )
+
+        assert result == 3
