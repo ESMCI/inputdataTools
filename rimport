@@ -203,14 +203,20 @@ class Entry(NamedTuple):
 
 
 class Skip(NamedTuple):
-    """One path that will not be staged, and the reason why.
+    """One path that will not be staged, the reason why, and whether the user named it.
 
     Both validation failures on discovered files and directories that could not be read
     become Skips, so `report_skips` can present them in one block.
+
+    `named` defaults to False so a walker that has no idea what the user typed can build a
+    Skip with two arguments. `expand_directories` is the one place that knows the whole
+    batch, so it is the one place that fills this in; `main` then trusts it rather than
+    re-deriving it, which previously meant two copies of the same set having to agree.
     """
 
     path: Path
     reason: Exception
+    named: bool = False
 
 
 def walk_files(root: Path) -> tuple[List[Path], List[Skip]]:
@@ -273,14 +279,17 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
         paths: Absolute paths from `normalize_paths`.
 
     Returns:
-        (entries, skips). `skips` carries two things: directories that could not be read
-        during a walk, and named paths whose is_dir() probe itself raised (a file under an
-        unreadable parent, say). Provenance is NOT recorded here -- `main` recovers it by
-        testing each skip's path against the paths the user named, and a walk skip is
-        usually discovered, so it warns and skips with exit 3 rather than aborting.
+        (entries, skips), each skip carrying its own provenance. `skips` holds two things:
+        directories that could not be read during a walk, and named paths whose is_dir()
+        probe itself raised (a file under an unreadable parent, say). A walk skip is usually
+        discovered, and a discovered skip warns and continues with exit 3 rather than
+        aborting; only a skip the user named is fatal. Skips are collapsed by path, so a
+        directory named twice yields one.
     """
     # Consumed twice -- once to walk, once to test provenance -- so a generator will not do.
-    paths = list(paths)
+    # Collapsing here means a directory named twice is walked once, so it counts once toward
+    # the expansion total and reports anything unreadable beneath it once.
+    paths = list(dict.fromkeys(paths))
     named_paths = set(paths)
     named_by_path: dict[Path, bool] = {}
     skips: List[Skip] = []
@@ -311,6 +320,14 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
             # A named path always wins over the same path discovered by a walk.
             named_by_path[path] = True
 
+    # Collapse by path and stamp provenance before anything counts or prints these. Two
+    # named directories can overlap -- `<tree>` and `<tree>/sub` -- and then the same
+    # unreadable grandchild is found by both walks.
+    deduped: dict[Path, Skip] = {}
+    for skip in skips:
+        deduped.setdefault(skip.path, Skip(skip.path, skip.reason, skip.path in named_paths))
+    skips = list(deduped.values())
+
     if n_dirs:
         logger.info(
             "rimport: expanded %d director(ies) to %d file(s)", n_dirs, len(expanded_files)
@@ -320,10 +337,10 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
         # Report a DISCOVERED skip here, during expansion, where the run reached it; the
         # end-of-run summary repeats it. A skip the user NAMED is not reported here at all:
         # main treats it as a fatal failure, and calling it "skipping" would contradict the
-        # "nothing was published" that follows. Ask the question main asks -- was this path
-        # named? -- not "is this the directory being walked": a directory can be named AND
-        # discovered beneath another named one, and then both are true of it.
-        if skip.path not in named_paths:
+        # "nothing was published" that follows. Note this asks about the whole batch, not
+        # about the directory being walked: a directory can be named AND discovered beneath
+        # another named one, and then both are true of it.
+        if not skip.named:
             logger.warning("%srimport: skipping '%s': %s", INDENT, skip.path, skip.reason)
 
     entries = [Entry(path, named) for path, named in named_by_path.items()]
@@ -786,14 +803,14 @@ def main(argv: List[str] | None = None) -> int:
     # bad path is only a skip: one unstageable file inside a large tree must not block the
     # thousands of good ones around it.
     # A directory the user NAMED that could not be read is a named failure, not a skip.
-    # Skip carries no provenance, so recognise it here by matching against the paths the
-    # user actually gave. An unreadable directory found BENEATH a named one stays a skip:
-    # the user did not name it, so it is discovered, and discovered failures warn and skip.
-    named_paths = set(paths)
+    # `expand_directories` stamped that on each Skip; deriving it a second time here would
+    # mean two sets that have to agree, and nothing enforcing it. An unreadable directory
+    # found BENEATH a named one stays a skip: the user did not name it, so it is discovered,
+    # and discovered failures warn and skip.
     named_failures: List[tuple[Path, Exception]] = [
-        (skip.path, skip.reason) for skip in skips if skip.path in named_paths
+        (skip.path, skip.reason) for skip in skips if skip.named
     ]
-    skips = [skip for skip in skips if skip.path not in named_paths]
+    skips = [skip for skip in skips if not skip.named]
     # An unreadable named directory never became an Entry, so it has to be added to the
     # count of paths considered; otherwise a lone one reports "1 of 0".
     n_considered = len(entries) + len(named_failures)

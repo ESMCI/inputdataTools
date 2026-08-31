@@ -759,7 +759,9 @@ class TestMain:
         captured = capsys.readouterr()
         # Two distinct paths were considered: `locked` and the good.nc discovered under `ok`.
         assert "1 of 2 file(s) failed pre-flight validation" in captured.err
-        assert captured.err.count(str(locked)) == 1
+        # Count list ENTRIES, not path occurrences: the OSError repr repeats the path within
+        # a single line, so a raw substring count sees two even when one entry is printed.
+        assert captured.err.count(f"rimport: '{locked}'") == 1
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
