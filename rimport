@@ -231,6 +231,52 @@ def walk_files(root: Path) -> tuple[List[Path], List[Skip]]:
     return files, skips
 
 
+def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
+    """Replace each directory in `paths` with the files beneath it, tagging provenance.
+
+    A path is expanded only if it is a real directory. A symlink to a directory is left
+    alone as a single named entry, matching `walk_files`' refusal to descend through one.
+    Nothing here validates: a nonexistent path passes straight through as named, so
+    `main`'s pre-flight gate can reject it with its usual message.
+
+    Duplicates collapse in first-seen order. If the same path is both named and discovered
+    -- the user typed a file that also lives inside a directory they named -- `named` wins,
+    so the path the user asked for by name keeps its fatal-on-failure treatment.
+
+    Args:
+        paths: Absolute paths from `normalize_paths`.
+
+    Returns:
+        (entries, skips). `skips` carries directories that could not be read during a walk.
+    """
+    named_by_path: dict[Path, bool] = {}
+    skips: List[Skip] = []
+    n_dirs = 0
+    n_expanded_files = 0
+
+    for path in paths:
+        if path.is_dir() and not path.is_symlink():
+            n_dirs += 1
+            found, walk_skips = walk_files(path)
+            skips.extend(walk_skips)
+            n_expanded_files += len(found)
+            if not found:
+                logger.warning("rimport: no files found under %s", path)
+            for found_path in found:
+                named_by_path.setdefault(found_path, False)
+        else:
+            # A named path always wins over the same path discovered by a walk.
+            named_by_path[path] = True
+
+    if n_dirs:
+        logger.info(
+            "rimport: expanded %d director(ies) to %d file(s)", n_dirs, n_expanded_files
+        )
+
+    entries = [Entry(path, named) for path, named in named_by_path.items()]
+    return entries, skips
+
+
 def check_relink_worked(src: Path, dst: Path) -> None:
     """Check whether relink worked
 
