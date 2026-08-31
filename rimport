@@ -285,7 +285,16 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
             n_dirs += 1
             found, walk_skips = walk_files(path)
             skips.extend(walk_skips)
-            if not found:
+            for skip in walk_skips:
+                # Report a DISCOVERED skip where it happened; the end-of-run summary repeats
+                # it. A skip whose path is the directory being walked is the one the user
+                # NAMED, which main reports as a fatal failure -- calling that "skipping"
+                # here would contradict "nothing was published".
+                if skip.path != path:
+                    logger.warning(
+                        "%srimport: skipping '%s': %s", INDENT, skip.path, skip.reason
+                    )
+            if not found and not walk_skips:
                 logger.warning("rimport: no files found under %s", path)
             for found_path in found:
                 expanded_files.add(found_path)
