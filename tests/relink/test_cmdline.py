@@ -29,26 +29,6 @@ def fixture_mock_dirs(tmp_path):
     return source_dir, target_dir, source_file, target_file
 
 
-@pytest.fixture(name="nested_mock_dirs")
-def fixture_nested_mock_dirs(tmp_path):
-    """Create a nested source/target layout for testing relative-path resolution
-    from inside an inputdata subdirectory."""
-    source_dir = tmp_path / "source"
-    target_dir = tmp_path / "target"
-    source_sub_dir = source_dir / "sub"
-    target_sub_dir = target_dir / "sub"
-    source_sub_dir.mkdir(parents=True)
-    target_sub_dir.mkdir(parents=True)
-
-    # Create a test file
-    source_file = source_sub_dir / "test_file.txt"
-    target_file = target_sub_dir / "test_file.txt"
-    source_file.write_text("source content")
-    target_file.write_text("target content")
-
-    return source_dir, target_dir, source_sub_dir, source_file, target_file
-
-
 def test_command_line_execution_dry_run(mock_dirs):
     """Test executing relink.py from command line with --dry-run flag."""
     source_dir, target_dir, source_file, _ = mock_dirs
