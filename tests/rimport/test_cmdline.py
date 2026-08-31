@@ -1218,6 +1218,76 @@ class TestRimportCommandLine:
         assert (staging_root / "lnd" / "top.nc").read_text() == "top"
         assert (staging_root / "lnd" / "clm2" / "paramdata" / "deep.nc").read_text() == "deep"
 
+    def test_file_option_expands_a_directory(self, rimport_script, test_env, rimport_env):
+        """--help promises expansion on all three input channels. The positional channel is
+        covered above; this is --file, which nothing else pins."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        d = inputdata_root / "lnd" / "clm2"
+        d.mkdir(parents=True)
+        (d / "a.nc").write_text("a")
+        (d / "sub").mkdir()
+        (d / "sub" / "b.nc").write_text("b")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                rimport_script,
+                "--file",
+                str(d),
+                "-inputdata",
+                str(inputdata_root),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        assert result.returncode == 0, f"Command unexpectedly failed: {result.stderr}"
+        assert (staging_root / "lnd" / "clm2" / "a.nc").read_text() == "a"
+        assert (staging_root / "lnd" / "clm2" / "sub" / "b.nc").read_text() == "b"
+        # The directory itself must never be staged or replaced -- the corruption 75c79cd
+        # was added to prevent.
+        assert d.is_dir() and not d.is_symlink()
+
+    def test_list_entry_expands_a_directory(self, rimport_script, test_env, rimport_env):
+        """The third channel. A --list entry naming a directory is enumerated the same way,
+        including when the entry is relative and anchors to the list file's own directory."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        d = inputdata_root / "lnd" / "clm2"
+        d.mkdir(parents=True)
+        (d / "a.nc").write_text("a")
+        (d / "sub").mkdir()
+        (d / "sub" / "b.nc").write_text("b")
+
+        # Relative, so this also pins that directory entries anchor like file entries do.
+        list_file = inputdata_root / "lnd" / "todo.txt"
+        list_file.write_text("clm2\n")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                rimport_script,
+                "--list",
+                str(list_file),
+                "-inputdata",
+                str(inputdata_root),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        assert result.returncode == 0, f"Command unexpectedly failed: {result.stderr}"
+        assert (staging_root / "lnd" / "clm2" / "a.nc").read_text() == "a"
+        assert (staging_root / "lnd" / "clm2" / "sub" / "b.nc").read_text() == "b"
+        assert d.is_dir() and not d.is_symlink()
+
     def test_skip_summary_repeats_skipped_files_on_stderr_at_the_end(
         self, rimport_script, test_env, rimport_env
     ):
