@@ -15,7 +15,7 @@ import pwd
 import shutil
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, NamedTuple
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -161,6 +161,74 @@ def normalize_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
         p = Path(os.path.normpath(p.absolute()))
         paths.append(p)
     return paths
+
+
+class Entry(NamedTuple):
+    """One path to consider staging, and how it got into the batch.
+
+    `named` is True when the user typed this path (positional, `--file`, or a `--list`
+    entry) and False when a directory walk discovered it. The distinction is what lets a
+    bad file inside a large tree warn-and-skip while a bad path the user asked for by name
+    still aborts the whole batch.
+    """
+
+    path: Path
+    named: bool
+
+
+class Skip(NamedTuple):
+    """One path that will not be staged, and the reason why.
+
+    Both validation failures on discovered files and directories that could not be read
+    become Skips, so `report_skips` can present them in one block.
+    """
+
+    path: Path
+    reason: Exception
+
+
+def walk_files(root: Path) -> tuple[List[Path], List[Skip]]:
+    """Recursively list the non-directory entries under `root`.
+
+    Descends only into real directories (`follow_symlinks=False`), so the walk cannot
+    leave the tree the user named and cannot loop on a cyclic link. A symlink is therefore
+    always a leaf: it is returned as an entry to act on, including when its target happens
+    to be a directory, and `validate_source_path` decides what that means.
+
+    Every non-directory entry is returned -- regular files, symlinks, dotfiles alike. There
+    is no owner filter (unlike relink's walker): rimport runs as the staging owner and the
+    point is to publish what is there.
+
+    Entries are sorted at each level so output and tests are deterministic; `os.scandir`
+    order is otherwise arbitrary.
+
+    Args:
+        root: Directory to walk.
+
+    Returns:
+        (files, skips). `files` are absolute paths in depth-first, per-level sorted order.
+        `skips` are directories that could not be read; an unreadable directory does not
+        raise and does not abort the rest of the walk.
+    """
+    files: List[Path] = []
+    skips: List[Skip] = []
+
+    try:
+        with os.scandir(root) as scan:
+            children = sorted(scan, key=lambda entry: entry.name)
+    except OSError as exc:
+        return [], [Skip(Path(root), exc)]
+
+    for child in children:
+        child_path = Path(child.path)
+        if child.is_dir(follow_symlinks=False):
+            sub_files, sub_skips = walk_files(child_path)
+            files.extend(sub_files)
+            skips.extend(sub_skips)
+        else:
+            files.append(child_path)
+
+    return files, skips
 
 
 def check_relink_worked(src: Path, dst: Path) -> None:
