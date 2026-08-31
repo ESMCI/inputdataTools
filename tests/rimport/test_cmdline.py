@@ -151,7 +151,14 @@ class TestRimportCommandLine:
         nested_file.write_text("nested data")
 
         filelist = inputdata_root / "lnd" / "filelist.txt"
-        filelist.write_text("clm2/file1.nc\n")
+        filelist.write_text(f"clm2/{nested_file.name}\n")
+
+        # Decoy at the root-anchored location: a root-relative regression would resolve
+        # here instead, giving a wrong-file failure rather than a merely-missing-file one.
+        decoy_file = inputdata_root / "clm2" / nested_file.name
+        decoy_file.parent.mkdir(parents=True)
+        decoy_file.write_text("decoy data")
+        assert decoy_file.read_text() != nested_file.read_text()
 
         # Run rimport with -list option
         command = [
@@ -182,6 +189,11 @@ class TestRimportCommandLine:
         # Verify file was relinked
         assert nested_file.is_symlink()
         assert nested_file.resolve() == staged_file
+
+        # Verify the decoy was left untouched, and nothing staged at the root-anchored path
+        assert not decoy_file.is_symlink()
+        assert decoy_file.read_text() == "decoy data"
+        assert not (staging_root / "clm2" / nested_file.name).exists()
 
     def test_list_inside_tree_relative_entries_anchor_to_list_dir_not_cwd(
         self, rimport_script, test_env, rimport_env
