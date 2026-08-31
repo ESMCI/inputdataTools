@@ -33,6 +33,20 @@ INPUTDATA_URL = "https://osdf-data.gdex.ucar.edu/ncar/gdex/d651077/cesmdata/inpu
 logger = shared.logger
 
 
+class _EpilogRawFormatter(argparse.HelpFormatter):
+    """Wrap the description as argparse normally would, but leave the epilog verbatim.
+
+    RawDescriptionHelpFormatter would preserve the epilog's exit-code list, but it also
+    stops re-wrapping the description, which then renders as one long line on a narrow
+    terminal. Only the epilog needs its line breaks kept.
+    """
+
+    def _fill_text(self, text, width, indent):
+        if text.lstrip().startswith("exit codes:"):
+            return "".join(indent + line for line in text.splitlines(keepends=True))
+        return super()._fill_text(text, width, indent)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build and configure the argument parser for rimport.
 
@@ -51,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  2: a name you gave failed validation; nothing was published\n"
             "  3: finished, but one or more files were skipped (listed at the end)\n"
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=_EpilogRawFormatter,
         add_help=False,  # Disable automatic help to add custom -help flag
     )
 
