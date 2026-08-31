@@ -549,6 +549,10 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
     entries, and all `--list` entries (which never anchor to cwd), are unaffected by an
     undeterminable cwd.
 
+    An empty or whitespace-only `file`/`items_to_process` entry is rejected with `(None, 2)`
+    before any anchoring happens, because an empty name would otherwise resolve to the cwd
+    and be expanded.
+
     Args:
         file (str): Single file to process.
         filelist (str): File containing list of files to process.
@@ -559,6 +563,18 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
         int:  Result code
     """
     cli_args = ([file] if file is not None else []) + list(items_to_process or [])
+    # An empty name would anchor to cwd and resolve to the cwd itself. That was harmless
+    # only while a directory was rejected outright; now that a directory expands, an unset
+    # shell variable (`rimport "$maybe_unset"`) would recursively publish the whole subtree
+    # the user is standing in. Refuse it.
+    empty_cli_args = [name for name in cli_args if not str(name).strip()]
+    if empty_cli_args:
+        logger.error(
+            "rimport: %d empty filename argument(s) given; refusing to resolve an empty "
+            "name to the current directory. Did a shell variable expand to nothing?",
+            len(empty_cli_args),
+        )
+        return None, 2
     relative_cli_args = [name for name in cli_args if not Path(name).is_absolute()]
 
     cwd = None
