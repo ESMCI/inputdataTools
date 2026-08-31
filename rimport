@@ -284,7 +284,16 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
     expanded_files: set[Path] = set()
 
     for path in paths:
-        if path.is_dir() and not path.is_symlink():
+        try:
+            is_real_dir = path.is_dir() and not path.is_symlink()
+        except OSError as exc:
+            # Python 3.13's is_dir() re-raises EACCES instead of returning False, so a path
+            # under an unreadable parent would abort the run with a traceback. Record it and
+            # let main decide: every path here was NAMED by the user, so main routes it to
+            # the fatal pre-flight block and the run exits 2 having published nothing.
+            skips.append(Skip(path, exc))
+            continue
+        if is_real_dir:
             n_dirs += 1
             found, walk_skips = walk_files(path)
             skips.extend(walk_skips)
