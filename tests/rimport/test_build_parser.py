@@ -203,9 +203,11 @@ class TestBuildParser:
     def test_help_documents_directory_expansion(self):
         """A user reading --help must learn that a directory argument is enumerated."""
         help_text = rimport.build_parser().format_help()
+        # argparse WRAPS argument help across lines, so match on whitespace-normalized text
+        normalized = " ".join(help_text.split()).lower()
 
-        assert "director" in help_text.lower()
-        assert "recursiv" in help_text.lower()
+        assert "directory" in normalized
+        assert "enumerated recursively" in normalized
 
     def test_help_documents_that_directory_symlinks_are_not_expanded(self):
         """The one surprising carve-out belongs in the help, not just the source."""
@@ -216,7 +218,10 @@ class TestBuildParser:
     def test_help_documents_all_four_exit_codes(self):
         """Exit 3 is new and scriptable; all four codes must be discoverable."""
         help_text = rimport.build_parser().format_help()
+        help_lower = help_text.lower()
 
-        for code in ["0", "1", "2", "3"]:
-            assert f"{code}:" in help_text
-        assert "skipped" in help_text.lower()
+        assert "exit codes:" in help_lower
+        exit_section = help_lower.split("exit codes:", 1)[1]
+        for code in ["0:", "1:", "2:", "3:"]:
+            assert code in exit_section
+        assert "skipped" in exit_section
