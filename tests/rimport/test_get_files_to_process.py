@@ -176,12 +176,13 @@ class TestGetRelnamesToProcess:
 
         # Decoy at the cwd-anchored location: a cwd-anchoring regression would resolve here
         # instead, giving a wrong-file failure rather than a merely-missing-file one.
-        decoy_file = atm_dir / "clm2" / "file1.nc"
+        decoy_file = atm_dir / "clm2" / real_file.name
         decoy_file.parent.mkdir(parents=True)
         decoy_file.write_text("decoy data")
+        assert decoy_file.read_text() != real_file.read_text()
 
         filelist = list_dir / "filelist.txt"
-        filelist.write_text("clm2/file1.nc\n", encoding="utf8")
+        filelist.write_text(f"clm2/{real_file.name}\n", encoding="utf8")
 
         # cwd inside the tree, but at a different location than the list file
         monkeypatch.chdir(atm_dir)

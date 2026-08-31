@@ -200,13 +200,14 @@ class TestRimportCommandLine:
         nested_file.write_text("real data")
 
         filelist = inputdata_root / "lnd" / "filelist.txt"
-        filelist.write_text("clm2/file1.nc\n")
+        filelist.write_text(f"clm2/{nested_file.name}\n")
 
         # Decoy at the cwd-anchored location: a cwd-anchoring regression would resolve here
         # instead, giving a wrong-file failure rather than a merely-missing-file one.
-        decoy_file = inputdata_root / "atm" / "clm2" / "file1.nc"
+        decoy_file = inputdata_root / "atm" / "clm2" / nested_file.name
         decoy_file.parent.mkdir(parents=True)
         decoy_file.write_text("decoy data")
+        assert decoy_file.read_text() != nested_file.read_text()
 
         # Run rimport with -list option, cwd inside the tree but at a DIFFERENT location
         # than the list file
@@ -232,7 +233,7 @@ class TestRimportCommandLine:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Verify the real file (not the decoy) was staged, anchored to the list dir's subtree
-        staged_file = staging_root / "lnd" / "clm2" / "file1.nc"
+        staged_file = staging_root / "lnd" / "clm2" / nested_file.name
         assert staged_file.exists()
         assert staged_file.read_text() == "real data"
 
@@ -243,7 +244,7 @@ class TestRimportCommandLine:
         # Verify the decoy was left untouched, and nothing staged at the cwd-anchored path
         assert not decoy_file.is_symlink()
         assert decoy_file.read_text() == "decoy data"
-        assert not (staging_root / "atm" / "clm2" / "file1.nc").exists()
+        assert not (staging_root / "atm" / "clm2" / nested_file.name).exists()
 
     def test_preserves_directory_structure(self, rimport_script, test_env, rimport_env):
         """Test that directory structure is preserved in staging."""
@@ -629,17 +630,19 @@ class TestRimportCommandLine:
         subdir = inputdata_root / "lnd" / "clm2"
         subdir.mkdir(parents=True)
 
-        subdir_file = subdir / "test.nc"
+        file_basename = "test.nc"
+        subdir_file = subdir / file_basename
         subdir_file.write_text("subdir data")
 
-        decoy_file = inputdata_root / "test.nc"
+        decoy_file = inputdata_root / file_basename
         decoy_file.write_text("decoy data")
+        assert decoy_file.read_text() != subdir_file.read_text()
 
         # Run rimport with a relative positional filename, from inside the subdir
         command = [
             sys.executable,
             rimport_script,
-            "test.nc",
+            file_basename,
             "-inputdata",
             str(inputdata_root),
         ]
@@ -657,7 +660,7 @@ class TestRimportCommandLine:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
 
         # Verify the subdir file (not the decoy) was staged
-        staged_file = staging_root / "lnd" / "clm2" / "test.nc"
+        staged_file = staging_root / "lnd" / "clm2" / file_basename
         assert staged_file.exists()
         assert staged_file.read_text() == "subdir data"
 
@@ -670,7 +673,7 @@ class TestRimportCommandLine:
         assert decoy_file.read_text() == "decoy data"
 
         # Verify nothing was staged at the root-anchored path
-        assert not (staging_root / "test.nc").exists()
+        assert not (staging_root / file_basename).exists()
 
     def test_relative_file_from_subdir_missing_errors_no_root_fallback(
         self, rimport_script, test_env, rimport_env
@@ -683,14 +686,15 @@ class TestRimportCommandLine:
         subdir = inputdata_root / "lnd" / "clm2"
         subdir.mkdir(parents=True)
 
-        root_file = inputdata_root / "test.nc"
+        file_basename = "test.nc"
+        root_file = inputdata_root / file_basename
         root_file.write_text("root data")
 
         # Run rimport with a relative positional filename, from inside the subdir
         command = [
             sys.executable,
             rimport_script,
-            "test.nc",
+            file_basename,
             "-inputdata",
             str(inputdata_root),
         ]
@@ -735,14 +739,15 @@ class TestRimportCommandLine:
         outside = tmp_path / "outside"
         outside.mkdir()
 
-        decoy_file = inputdata_root / "test.nc"
+        file_basename = "test.nc"
+        decoy_file = inputdata_root / file_basename
         decoy_file.write_text("decoy data")
 
         # Run rimport with a relative positional filename, from outside the tree
         command = [
             sys.executable,
             rimport_script,
-            "test.nc",
+            file_basename,
             "-inputdata",
             str(inputdata_root),
         ]

@@ -162,10 +162,12 @@ def test_command_line_relative_file_from_inputdata_subdir(nested_mock_dirs):
     # target copy (also different content). Correct cwd-relative resolution
     # of "test_file.txt" never reaches this file; a root-relative regression
     # would relink it instead of the subdir file.
-    decoy_file = source_dir / "test_file.txt"
-    decoy_target = target_dir / "test_file.txt"
+    decoy_file = source_dir / source_file.name
+    decoy_target = target_dir / target_file.name
     decoy_file.write_text("decoy content")
     decoy_target.write_text("decoy target content")
+    assert decoy_file.read_text() != source_file.read_text()
+    assert decoy_target.read_text() != target_file.read_text()
 
     # Get the path to relink.py
     relink_script = os.path.join(
@@ -177,7 +179,7 @@ def test_command_line_relative_file_from_inputdata_subdir(nested_mock_dirs):
     command = [
         sys.executable,
         relink_script,
-        "test_file.txt",
+        source_file.name,
         "--target-root",
         str(target_dir),
         "--inputdata-root",
@@ -207,26 +209,32 @@ def test_command_line_relative_dir_dot_from_inputdata_subdir(nested_mock_dirs):
     """Test that '.' is resolved against the cwd (an inputdata subdirectory),
     not against the inputdata root.
 
-    A decoy file sits directly under the inputdata root, outside "sub", with
-    a matching target copy so it *would* be relinkable if reached. Because
-    relink's search is recursive, resolving '.' against cwd (source_dir/sub)
-    never reaches the decoy, while a root-relative regression -- resolving
-    '.' against inputdata_root (source_dir) instead -- would recurse into
-    the decoy too. Only the decoy assertion below actually discriminates
-    between those two resolutions; the symlink-target subdirectory
-    (test_file.txt) is reached by recursion either way.
+    A same-named decoy file sits directly under the inputdata root, outside
+    "sub", with different content than the intended file, plus a matching
+    target copy (also with different content) so it *would* be relinkable if
+    reached. This test's discriminator is LOCATION, not the name collision:
+    because relink's search is recursive, resolving '.' against cwd
+    (source_dir/sub) never reaches the decoy, while a root-relative
+    regression -- resolving '.' against inputdata_root (source_dir) instead
+    -- would recurse into the decoy too. Only the decoy assertion below
+    actually discriminates between those two resolutions; the symlink-target
+    subdirectory (source_file) is reached by recursion either way.
     """
     source_dir, target_dir, source_sub_dir, source_file, target_file = (
         nested_mock_dirs
     )
 
-    # Decoy file directly under the inputdata root (outside "sub"), with a
-    # matching target copy. Correct cwd-relative resolution of "." never
-    # reaches this file; a root-relative regression would.
-    decoy_file = source_dir / "decoy.txt"
-    decoy_target = target_dir / "decoy.txt"
+    # Decoy file directly under the inputdata root (outside "sub"), same
+    # name as the intended file but different content, with a matching
+    # target copy (also different content). Correct cwd-relative resolution
+    # of "." never reaches this file; a root-relative regression would
+    # recurse into it too.
+    decoy_file = source_dir / source_file.name
+    decoy_target = target_dir / target_file.name
     decoy_file.write_text("decoy content")
     decoy_target.write_text("decoy target content")
+    assert decoy_file.read_text() != source_file.read_text()
+    assert decoy_target.read_text() != target_file.read_text()
 
     # Get the path to relink.py
     relink_script = os.path.join(
