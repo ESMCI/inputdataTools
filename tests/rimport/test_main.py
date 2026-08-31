@@ -604,6 +604,7 @@ class TestMain:
 
         assert result == 3
         assert (staging_root / "lnd" / "good.nc").read_text() == "good"
+        assert (subdir / "good.nc").is_symlink()
         captured = capsys.readouterr()
         # Reported inline at WARNING (stdout) as the run reaches it...
         assert "skipping" in captured.out
