@@ -44,6 +44,14 @@ def build_parser() -> argparse.ArgumentParser:
             f"Copy files from CESM inputdata directory ({DEFAULT_INPUTDATA_ROOT}) to a publishing"
             " directory, then replace the original with a symlink to the copy."
         ),
+        epilog=(
+            "exit codes:\n"
+            "  0: everything staged or checked, nothing skipped\n"
+            "  1: a file could not be staged\n"
+            "  2: a name you gave failed validation; nothing was published\n"
+            "  3: finished, but one or more files were skipped (listed at the end)\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,  # Disable automatic help to add custom -help flag
     )
 
@@ -55,7 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Provide a file to import. Must be in the CESM inputdata directory. A relative name"
             " is resolved against the current directory; there is no fallback to the"
-            " inputdata root."
+            " inputdata root. If the name is a directory, every file beneath it is enumerated recursively and"
+            " acted on; a symlink to a directory is not expanded."
         ),
     )
 
@@ -67,7 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Provide a file that contains a list of filenames to import. All filenames in the list"
             " must be in the CESM inputdata directory. A relative entry is resolved against the"
-            " list file's own directory, wherever that directory is."
+            " list file's own directory, wherever that directory is. A list entry naming a directory is enumerated recursively, the same as a name given"
+            " on the command line."
         ),
     )
 
@@ -77,7 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "One or more files to process. (Optional; can use --file instead to process just one.)"
             " A relative name is resolved against the current directory; there is no fallback to"
-            " the inputdata root."
+            " the inputdata root. If the name is a directory, every file beneath it is enumerated recursively and"
+            " acted on; a symlink to a directory is not expanded."
         ),
     )
 
@@ -91,8 +102,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Check whether file(s) is/are already published, without staging anything. A bad"
-            " path anywhere in the batch aborts before any file is checked, reporting all bad"
-            " paths at once."
+            " name that you gave aborts before any file is checked, reporting all bad names"
+            " at once; a file found by enumerating a directory is instead reported and"
+            " skipped individually."
         ),
     )
 
