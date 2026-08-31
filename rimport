@@ -755,7 +755,18 @@ def main(argv: List[str] | None = None) -> int:
     # aborts the whole batch, so a batch containing one is never half-completed. A DISCOVERED
     # bad path is only a skip: one unstageable file inside a large tree must not block the
     # thousands of good ones around it.
-    named_failures: List[tuple[Path, Exception]] = []
+    # A directory the user NAMED that could not be read is a named failure, not a skip.
+    # Skip carries no provenance, so recognise it here by matching against the paths the
+    # user actually gave. An unreadable directory found BENEATH a named one stays a skip:
+    # the user did not name it, so it is discovered, and discovered failures warn and skip.
+    named_paths = set(paths)
+    named_failures: List[tuple[Path, Exception]] = [
+        (skip.path, skip.reason) for skip in skips if skip.path in named_paths
+    ]
+    skips = [skip for skip in skips if skip.path not in named_paths]
+    # An unreadable named directory never became an Entry, so it has to be added to the
+    # count of paths considered; otherwise a lone one reports "1 of 0".
+    n_considered = len(entries) + len(named_failures)
     to_stage: List[Path] = []
     for entry in entries:
         error = validate_source_path(entry.path, root, staging_root)
@@ -771,7 +782,7 @@ def main(argv: List[str] | None = None) -> int:
         logger.error(
             "rimport: %d of %d file(s) failed pre-flight validation; nothing was published:",
             len(named_failures),
-            len(entries),
+            n_considered,
         )
         for path, error in named_failures:
             logger.error("%srimport: '%s': %s", INDENT, path, error)
