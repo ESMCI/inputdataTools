@@ -726,10 +726,13 @@ def main(argv: List[str] | None = None) -> int:
                staging anything and reports every failure at once, so a bad path never
                leaves the batch half-published. This gate applies to --check runs too.
         3: The run finished -- nothing was rejected outright and no file failed while being
-           staged or relinked -- but one or more discovered paths (files found by expanding
-           a directory argument) failed pre-flight validation and were skipped rather than
-           staged. Each skip is warned about inline where it happens and the full list is
-           repeated on stderr at the very end, so a skipped file cannot be missed.
+           staged or relinked -- but at least one discovered path was skipped rather than
+           staged. Two things cause that, and either alone is enough: a file found by
+           expanding a directory argument failed pre-flight validation, or a directory
+           beneath a named one could not be read. Each skip is warned about inline during
+           expansion or pre-flight and the full list is repeated on stderr at the very end,
+           so a skipped path cannot be missed. Note that only DISCOVERED paths are skipped;
+           the same failure on a path the user named is fatal, and exits 2.
     """
     parser = build_parser()
     args = parser.parse_args(argv)
