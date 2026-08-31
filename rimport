@@ -52,7 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         "-file",
         dest="file",
         metavar="filename",
-        help="Provide a file to import. Must be in the CESM inputdata directory.",
+        help=(
+            "Provide a file to import. Must be in the CESM inputdata directory. A relative name"
+            " is resolved against the current directory; there is no fallback to the"
+            " inputdata root."
+        ),
     )
 
     parser.add_argument(
@@ -62,14 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="filelist",
         help=(
             "Provide a file that contains a list of filenames to import. All filenames in the list"
-            " must be in the CESM inputdata directory."
+            " must be in the CESM inputdata directory. A relative entry is resolved against the"
+            " list file's own directory, wherever that directory is."
         ),
     )
 
     parser.add_argument(
         "items_to_process",
         nargs="*",
-        help="One or more files to process. (Optional; can use --file instead to process just one.)"
+        help=(
+            "One or more files to process. (Optional; can use --file instead to process just one.)"
+            " A relative name is resolved against the current directory; there is no fallback to"
+            " the inputdata root."
+        ),
     )
 
     # Add inputdata_root option flags
@@ -80,7 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
         "-check",
         "-c",
         action="store_true",
-        help="Check whether file(s) is/are already published.",
+        help=(
+            "Check whether file(s) is/are already published, without staging anything. A bad"
+            " path anywhere in the batch aborts before any file is checked, reporting all bad"
+            " paths at once."
+        ),
     )
 
     # Add verbosity options
@@ -119,13 +132,24 @@ def normalize_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
     """Convert relative or absolute path names to normalized absolute Paths.
 
     For each name in relnames:
-    - If the name is relative, it is assumed to be relative to `root` and made absolute
+    - If the name is relative, it is joined onto `root` and made absolute.
     All paths are then normalized to their absolute form, replacing . and .. as needed.
+
+    The `root / name` branch above is unreachable from `main`: `get_files_to_process` now
+    anchors every relative name before returning it -- CLI-style names (`--file`, positional)
+    against cwd, `--list` entries against the list file's own directory -- so nothing relative
+    ever reaches this function on `main`'s call path, and `root` is effectively unused there.
+    This is dead code, kept deliberately rather than removed; do not read this function in
+    isolation and conclude that root-relative resolution is still reachable anywhere in
+    `rimport`. The branch is still real code, though: it is exercised directly by this
+    function's own unit tests in test_normalize_paths.py, which call normalize_paths() with
+    relative names and a `root` of their choosing.
 
     Note that symlinks are NOT resolved.
 
     Args:
-        root: Base directory under which relative paths are assumed to be.
+        root: Base directory under which relative paths are assumed to be. Only matters for
+            the unreachable-from-`main` branch described above.
         relnames: Iterable of path names (relative or absolute) to normalize.
 
     Returns:
@@ -153,6 +177,67 @@ def check_relink_worked(src: Path, dst: Path) -> None:
         raise RuntimeError("Error relinking during rimport")
 
 
+def validate_source_path(
+    src: Path, inputdata_root: Path, staging_root: Path
+) -> Exception | None:
+    """Run stage_data's read-only guardrails against `src` without raising or logging.
+
+    This is the pre-flight half of `stage_data`'s checks: broken symlink, live symlink whose
+    target is outside staging, missing file, directory, outside the inputdata root, and already
+    under the staging directory. It performs no I/O beyond stat-ing `src` and its resolved
+    target — in particular it never makes a network call — so it is cheap to run over an entire
+    batch before anything is staged.
+
+    Critically, a *live* symlink whose target resolves under `staging_root` is NOT a failure:
+    that is the normal state of a file that has already been published and linked by a previous
+    run, and is treated here exactly like a plain, stageable file (returns `None`). Re-running
+    rimport over an already-published tree must not report every published file as bad.
+
+    `stage_data` calls this first and raises whatever it returns; `main`'s pre-flight gate calls
+    it over every resolved path before staging anything, so a bad path anywhere in the batch is
+    reported without partially publishing the rest.
+
+    Args:
+        src: Source file path to validate.
+        inputdata_root: Root directory of the inputdata tree.
+        staging_root: Root directory where files will be staged.
+
+    Returns:
+        The exception (unraised) describing why `src` cannot be staged, or `None` if `src` is
+        fine to proceed with — including the already-published-and-linked symlink case.
+    """
+    if src.is_symlink():
+        if not os.path.exists(src.resolve()):
+            return RuntimeError(f"Source is a broken symlink: {src}")
+        if not src.resolve().is_relative_to(staging_root.resolve()):
+            return RuntimeError(
+                f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
+                f"({staging_root})"
+            )
+        # Live symlink already resolving under staging_root: already published and linked.
+        # This is a legitimate no-op, not a validation failure.
+        return None
+
+    if not src.exists():
+        return FileNotFoundError(f"source not found: {src}")
+
+    if src.is_dir():
+        return RuntimeError(f"source is a directory, not a file: {src}")
+
+    try:
+        src.resolve().relative_to(inputdata_root.resolve())
+    except ValueError:
+        if src.resolve().is_relative_to(staging_root.resolve()):
+            return RuntimeError(
+                f"Source file '{src.name}' is already under staging directory '{staging_root}'."
+            )
+        return RuntimeError(
+            f"source not under inputdata root: {src} not in {inputdata_root}"
+        )
+
+    return None
+
+
 def stage_data(
     src: Path, inputdata_root: Path, staging_root: Path, check: bool = False
 ) -> None:
@@ -172,41 +257,43 @@ def stage_data(
         RuntimeError: If `src` is a live symlink pointing outside staging, or if `src` is outside
                       the inputdata root, or if `src` is already under staging directory.
         RuntimeError: If `src` is a broken symlink.
+        RuntimeError: If `src` is a directory. This check runs only when `src` is not itself
+                      a symlink — see the symlink guardrails above, which return early (without
+                      raising) for a symlink whose target is a directory under `staging_root`.
+                      A symlink whose directory target is outside `staging_root` instead raises
+                      via the first entry above.
         RuntimeError: If it failed to replace `src` with a symlink to the staged file.
         FileNotFoundError: If `src` does not exist.
 
     Guardrails:
-        * Raise if `src` is a *live* symlink to a file outside staging root ("outside staging").
+        * Raise if `src` is a *live* symlink to a target outside staging root ("outside staging").
         * Raise if `src` is a broken symlink or is outside the inputdata root.
+        * Raise if `src` is a directory and not itself a symlink, so a non-symlink directory
+          source can never reach the replace-with-symlink path (which assumes a regular file
+          and mangles a directory). A *symlink* whose target is a directory is NOT covered by
+          this guardrail: it is handled by the live-symlink guardrails above instead, which for
+          a target under `staging_root` log "already published and linked" and return without
+          raising, and for a target outside `staging_root` raise (see the first guardrail above).
+
+        These read-only guardrails are delegated to `validate_source_path`, which returns the
+        exception to raise (or None); this function raises whatever comes back. That keeps this
+        function and `main`'s pre-flight gate in permanent agreement about what is stageable,
+        since both call the same check.
     """
+    error = validate_source_path(src, inputdata_root, staging_root)
+    if error is not None:
+        raise error
+
     if src.is_symlink():
-        if not os.path.exists(src.resolve()):
-            raise RuntimeError(f"Source is a broken symlink: {src}")
-        if not src.resolve().is_relative_to(staging_root.resolve()):
-            raise RuntimeError(
-                f"Source is a symlink, but target ({src.resolve()}) is outside staging directory "
-                f"({staging_root})"
-            )
+        # validate_source_path only lets a symlink through here when it is live and its target
+        # resolves under staging_root: the "already published and linked" case.
         logger.info("%sFile is already published and linked.", INDENT)
         print_can_file_be_downloaded(
             can_file_be_downloaded(src.resolve(), staging_root)
         )
         return
 
-    if not src.exists():
-        raise FileNotFoundError(f"source not found: {src}")
-
-    try:
-        rel = src.resolve().relative_to(inputdata_root.resolve())
-    except ValueError as exc:
-        if src.resolve().is_relative_to(staging_root.resolve()):
-            raise RuntimeError(
-                f"Source file '{src.name}' is already under staging directory '{staging_root}'."
-            ) from exc
-        raise RuntimeError(
-            f"source not under inputdata root: {src} not in {inputdata_root}"
-        ) from exc
-
+    rel = src.resolve().relative_to(inputdata_root.resolve())
     dst = staging_root / rel
 
     if dst.exists():
@@ -336,6 +423,18 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
 
     Uses --file and/or --filelist arguments, as well as positional items_to_process if given.
 
+    One rule, no modes, no root-relative fallback: non-absolute `file` and
+    `items_to_process` entries are CLI args and always anchor (eagerly, absolute) to cwd.
+    Non-absolute `--list` entries always anchor (eagerly, absolute) against the list
+    file's own directory. Absolute paths are returned unchanged everywhere.
+
+    If `Path.cwd()` itself raises (e.g. the working directory was deleted out from under
+    the process) and at least one `file`/`items_to_process` entry is relative, there is
+    nothing to anchor it against: this is fatal, reporting every offending relative name
+    in one error message and returning `(None, 2)`. Absolute `file`/`items_to_process`
+    entries, and all `--list` entries (which never anchor to cwd), are unaffected by an
+    undeterminable cwd.
+
     Args:
         file (str): Single file to process.
         filelist (str): File containing list of files to process.
@@ -345,10 +444,30 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
         list: List of files to process
         int:  Result code
     """
-    if file is not None:
-        files_to_process = [file]
-    else:
-        files_to_process = []
+    cli_args = ([file] if file is not None else []) + list(items_to_process or [])
+    relative_cli_args = [name for name in cli_args if not Path(name).is_absolute()]
+
+    cwd = None
+    if relative_cli_args:
+        try:
+            cwd = Path.cwd().resolve()
+        except OSError:
+            # cwd may have been deleted out from under the process (FileNotFoundError, itself
+            # an OSError). There is no root fallback to anchor a relative name against instead,
+            # so this is fatal: report every offending name in one error message.
+            logger.error(
+                "rimport: could not determine the current working directory (it may have "
+                "been deleted); cannot resolve relative name(s): %s",
+                ", ".join(relative_cli_args),
+            )
+            return None, 2
+
+    def _anchor_cli(name):
+        if Path(name).is_absolute():
+            return name
+        return str(cwd / name)
+
+    files_to_process = [_anchor_cli(file)] if file is not None else []
 
     if filelist is not None:
         list_path = Path(filelist).expanduser().resolve()
@@ -359,10 +478,16 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
         if not files_in_list:
             logger.error("rimport: no filenames found in list: %s", list_path)
             return None, 2
-        files_to_process.extend(files_in_list)
+
+        list_base = list_path.parent
+        for entry in files_in_list:
+            if Path(entry).is_absolute():
+                files_to_process.append(entry)
+            else:
+                files_to_process.append(str(list_base / entry))
 
     if items_to_process:
-        files_to_process.extend(items_to_process)
+        files_to_process.extend(_anchor_cli(item) for item in items_to_process)
 
     if not files_to_process:
         logger.error("rimport: At least one of --file or --filelist is required")
@@ -389,9 +514,26 @@ def main(argv: List[str] | None = None) -> int:
         RIMPORT_STAGING: Override the default staging root directory.
 
     Exit Codes:
-        0: All files staged successfully.
-        1: One or more files failed to stage or relink (errors printed to stderr).
-        2: Fatal error (missing inputdata directory, missing file list, etc.).
+        0: All files staged successfully (or, under --check, checked without error).
+        1: Pre-flight validation passed, but one or more files failed while actually being
+           staged or relinked -- a genuine runtime failure, not a rejected input (errors
+           printed to stderr for each).
+        2: The run was rejected before any file was staged or checked. Causes:
+             * argparse rejected the command line itself -- e.g. an unrecognized option,
+               or an --inputdata-root that does not exist (argparse validates it via
+               type=, so this fires before any of the code below runs).
+             * The inputdata root directory does not exist.
+             * No --file, --list, or positional argument was given.
+             * The --list file was not found, or contained no filenames.
+             * A relative --file or positional name could not be anchored, because the
+               current working directory could not be determined.
+             * User-switching to STAGE_OWNER failed: target user not found, or no TTY
+               available for the sudo/2FA prompt.
+             * Most commonly: pre-flight validation rejected one or more of the resolved
+               paths (missing file, directory, broken symlink, source outside the
+               inputdata root, etc.). Pre-flight checks every resolved path before
+               staging anything and reports every failure at once, so a bad path never
+               leaves the batch half-published. This gate applies to --check runs too.
     """
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -412,13 +554,34 @@ def main(argv: List[str] | None = None) -> int:
         return 2
 
     # Determine the list of relative filenames to handle
-    files_to_process, status = get_files_to_process(args.file, args.filelist, args.items_to_process)
+    files_to_process, status = get_files_to_process(
+        args.file, args.filelist, args.items_to_process
+    )
     if status:
         return status
 
     # Resolve to full paths (keep accepting absolute names too)
     paths = normalize_paths(root, files_to_process)
     staging_root = get_staging_root()
+
+    # Pre-flight: validate every path before staging anything, so a batch containing a bad
+    # path is reported (all bad paths at once) instead of half-completing. Runs for --check
+    # too: a bad entry aborts the whole batch rather than being reported per-file.
+    failures = []
+    for p in paths:
+        error = validate_source_path(p, root, staging_root)
+        if error is not None:
+            failures.append((p, error))
+    if failures:
+        logger.error(
+            "rimport: %d of %d file(s) failed pre-flight validation; nothing was published:",
+            len(failures),
+            len(paths),
+        )
+        for p, error in failures:
+            logger.error("%srimport: '%s': %s", INDENT, p, error)
+        return 2
+
     # Execute the new action per file
     errors = 0
     for p in paths:

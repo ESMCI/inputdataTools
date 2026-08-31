@@ -136,6 +136,132 @@ def test_command_line_execution_given_file(mock_dirs):
     assert f"{INDENT}Created symbolic link:" in result.stdout
 
 
+def _run_relink_relative_positional(nested_mock_dirs, positional_arg):
+    """Create a same-named decoy at the inputdata root (outside "sub"), then
+    run relink.py with `positional_arg` as the sole path argument and cwd
+    set to the inputdata subdirectory.
+
+    Shared setup and invocation for
+    test_command_line_relative_file_from_inputdata_subdir and
+    test_command_line_relative_dir_dot_from_inputdata_subdir. Those two
+    tests differ ONLY in `positional_arg` (a bare filename vs "."), and that
+    single difference changes what regression each one discriminates and
+    which of its own assertions does the discriminating -- see each test's
+    docstring. This helper deliberately makes no assertion about the
+    outcome of the run beyond confirming the decoy setup itself: the payoff
+    assertions that make each test meaningful differ between the two
+    callers and stay in the tests, not here.
+
+    Returns (result, decoy_file) for the caller to assert against.
+    """
+    source_dir, target_dir, source_sub_dir, source_file, target_file = (
+        nested_mock_dirs
+    )
+
+    # Decoy file directly under the inputdata root (outside "sub"), same
+    # name as the intended file but different content, with a matching
+    # target copy (also different content).
+    decoy_file = source_dir / source_file.name
+    decoy_target = target_dir / target_file.name
+    decoy_file.write_text("decoy content")
+    decoy_target.write_text("decoy target content")
+    assert decoy_file.read_text() != source_file.read_text()
+    assert decoy_target.read_text() != target_file.read_text()
+
+    # Get the path to relink.py
+    relink_script = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "relink.py",
+    )
+
+    # Build the command
+    command = [
+        sys.executable,
+        relink_script,
+        positional_arg,
+        "--target-root",
+        str(target_dir),
+        "--inputdata-root",
+        str(source_dir),
+    ]
+
+    # Execute the command with cwd set to the inputdata subdirectory
+    result = subprocess.run(
+        command, cwd=str(source_sub_dir), capture_output=True, text=True, check=False
+    )
+
+    return result, decoy_file
+
+
+def test_command_line_relative_file_from_inputdata_subdir(nested_mock_dirs):
+    """Test that a bare relative filename is resolved against the cwd (an
+    inputdata subdirectory), not against the inputdata root.
+
+    A same-named decoy file sits directly under the inputdata root, outside
+    "sub", with different content than the intended file, plus a matching
+    target copy (also with different content) so it *would* be relinked if a
+    root-relative regression resolved "test_file.txt" against inputdata_root
+    instead of cwd. Because this is a single-file argument rather than a
+    directory to recurse into, such a regression would process the decoy
+    INSTEAD OF the subdir file, not in addition to it. The return code and
+    decoy_file.is_file() pass either way (the latter because is_file()
+    follows a symlink to a real file); what actually discriminates is that
+    the decoy stays a plain file with its original content (not relinked),
+    and that the intended subdir file is the one converted to a symlink --
+    pointing at the subdir's target copy, not the root decoy's.
+    """
+    *_, source_file, target_file = nested_mock_dirs
+
+    result, decoy_file = _run_relink_relative_positional(
+        nested_mock_dirs, source_file.name
+    )
+
+    # Verify the command executed successfully
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+
+    # Verify the intended subdir file was converted to a symlink pointing at
+    # the subdir's target copy (not the root decoy's)
+    assert source_file.is_symlink()
+    assert os.readlink(str(source_file)) == str(target_file)
+
+    # Verify the decoy at the inputdata root was NOT reached/relinked
+    assert decoy_file.is_file()
+    assert not decoy_file.is_symlink()
+    assert decoy_file.read_text() == "decoy content"
+
+
+def test_command_line_relative_dir_dot_from_inputdata_subdir(nested_mock_dirs):
+    """Test that '.' is resolved against the cwd (an inputdata subdirectory),
+    not against the inputdata root.
+
+    A same-named decoy file sits directly under the inputdata root, outside
+    "sub", with different content than the intended file, plus a matching
+    target copy (also with different content) so it *would* be relinkable if
+    reached. This test's discriminator is LOCATION, not the name collision:
+    because relink's search is recursive, resolving '.' against cwd
+    (source_dir/sub) never reaches the decoy, while a root-relative
+    regression -- resolving '.' against inputdata_root (source_dir) instead
+    -- would recurse into the decoy too. Only the decoy assertion below
+    actually discriminates between those two resolutions; the symlink-target
+    subdirectory (source_file) is reached by recursion either way.
+    """
+    *_, source_file, target_file = nested_mock_dirs
+
+    result, decoy_file = _run_relink_relative_positional(nested_mock_dirs, ".")
+
+    # Verify the command executed successfully
+    assert result.returncode == 0, f"Command failed with stderr: {result.stderr}"
+
+    # Verify the file was converted to a symlink pointing at the target copy
+    assert source_file.is_symlink()
+    assert os.readlink(str(source_file)) == str(target_file)
+
+    # Verify the decoy outside "sub" was NOT reached/relinked
+    assert decoy_file.is_file()
+    assert not decoy_file.is_symlink()
+    assert decoy_file.read_text() == "decoy content"
+
+
 def test_command_line_multiple_source_dirs(temp_dirs):
     """Test executing relink.py with multiple source directories."""
     inputdata_dir, target_dir = temp_dirs
