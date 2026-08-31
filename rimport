@@ -252,17 +252,17 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
     named_by_path: dict[Path, bool] = {}
     skips: List[Skip] = []
     n_dirs = 0
-    n_expanded_files = 0
+    expanded_files: set[Path] = set()
 
     for path in paths:
         if path.is_dir() and not path.is_symlink():
             n_dirs += 1
             found, walk_skips = walk_files(path)
             skips.extend(walk_skips)
-            n_expanded_files += len(found)
             if not found:
                 logger.warning("rimport: no files found under %s", path)
             for found_path in found:
+                expanded_files.add(found_path)
                 named_by_path.setdefault(found_path, False)
         else:
             # A named path always wins over the same path discovered by a walk.
@@ -270,7 +270,7 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
 
     if n_dirs:
         logger.info(
-            "rimport: expanded %d director(ies) to %d file(s)", n_dirs, n_expanded_files
+            "rimport: expanded %d director(ies) to %d file(s)", n_dirs, len(expanded_files)
         )
 
     entries = [Entry(path, named) for path, named in named_by_path.items()]
