@@ -1081,16 +1081,24 @@ class TestRimportCommandLine:
         assert not list(inputdata_root.rglob("*.tmp"))
         assert inner_file.read_text() == "clm2 data"
 
-    def test_mixed_validity_list_aborts_and_stages_nothing(
-        self, rimport_script, test_env, rimport_env
-    ):
-        """Test the pre-flight gate end to end: a --list with one valid entry and two entries
-        that are invalid in DIFFERENT ways (missing, and a directory) aborts the whole batch
-        with rc 2, reports every failure reason, gets the "N of M" count right, and — the
-        assertion that matters most — never stages or relinks the valid entry.
+    def _run_mixed_validity_list(self, rimport_script, test_env, rimport_env, *, check):
+        """Set up a --list with one valid entry (good.nc) and two entries that are invalid
+        in DIFFERENT ways (missing.nc, and a directory named adir), all as absolute paths in
+        a list file OUTSIDE the inputdata tree, then run rimport.py against it -- with
+        --check when `check` is True (which also requires deleting
+        RIMPORT_SKIP_USER_CHECK, since --check needs ensure_running_as() to actually run),
+        without it otherwise.
 
-        The list file lives OUTSIDE the inputdata tree with absolute entries (this configuration
-        previously had no end-to-end coverage at all)."""
+        Shared setup and invocation for test_mixed_validity_list_aborts_and_stages_nothing
+        and test_check_mode_is_gated_too_and_reports_nothing_for_valid_entry. The two tests
+        differ in `check` and, more importantly, in what each one's own payoff assertions
+        check afterward -- see each test's docstring. This helper asserts only the rc-2 and
+        failure-reason outcome that is IDENTICAL for both callers and that neither test
+        discriminates on; the payoff assertions that make each test meaningful stay in the
+        tests, not here.
+
+        Returns (result, valid_file, staging_root) for the caller to assert against.
+        """
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
         tmp_path = test_env["tmp_path"]
@@ -1115,6 +1123,10 @@ class TestRimportCommandLine:
             "-inputdata",
             str(inputdata_root),
         ]
+        if check:
+            # Make sure --check skips ensure_running_as()
+            del rimport_env["RIMPORT_SKIP_USER_CHECK"]
+            command.append("--check")
 
         result = subprocess.run(
             command,
@@ -1124,11 +1136,28 @@ class TestRimportCommandLine:
             env=rimport_env,
         )
 
-        # Verify failure: rc 2, all reasons present, correct "N of M" count
+        # Verify failure: rc 2, all reasons present, correct "N of M" count. Identical for
+        # both callers; not what either test discriminates on.
         assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
         assert "2 of 3 file(s) failed pre-flight validation" in result.stderr
         assert f"source not found: {missing_file}" in result.stderr
         assert f"source is a directory, not a file: {bad_dir}" in result.stderr
+
+        return result, valid_file, staging_root
+
+    def test_mixed_validity_list_aborts_and_stages_nothing(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Test the pre-flight gate end to end: a --list with one valid entry and two entries
+        that are invalid in DIFFERENT ways (missing, and a directory) aborts the whole batch
+        with rc 2, reports every failure reason, gets the "N of M" count right, and — the
+        assertion that matters most — never stages or relinks the valid entry.
+
+        The list file lives OUTSIDE the inputdata tree with absolute entries (this configuration
+        previously had no end-to-end coverage at all)."""
+        _result, valid_file, staging_root = self._run_mixed_validity_list(
+            rimport_script, test_env, rimport_env, check=False
+        )
 
         # Verify the valid file was NOT staged and NOT turned into a symlink
         assert not (staging_root / "good.nc").exists()
@@ -1149,48 +1178,9 @@ class TestRimportCommandLine:
         reporting, even though it means a --check run tells you nothing about the files that
         would have been fine) — a future reader should not "fix" this into per-file --check
         reporting without first re-litigating that choice with the repo owner."""
-        inputdata_root = test_env["inputdata_root"]
-        staging_root = test_env["staging_root"]
-        tmp_path = test_env["tmp_path"]
-
-        valid_file = inputdata_root / "good.nc"
-        valid_file.write_text("good data")
-
-        missing_file = inputdata_root / "missing.nc"
-
-        bad_dir = inputdata_root / "adir"
-        bad_dir.mkdir()
-
-        # List file OUTSIDE the tree, with absolute entries.
-        filelist = tmp_path / "filelist.txt"
-        filelist.write_text(f"{valid_file}\n{missing_file}\n{bad_dir}\n")
-
-        # Make sure --check skips ensure_running_as()
-        del rimport_env["RIMPORT_SKIP_USER_CHECK"]
-
-        command = [
-            sys.executable,
-            rimport_script,
-            "-list",
-            str(filelist),
-            "-inputdata",
-            str(inputdata_root),
-            "--check",
-        ]
-
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=rimport_env,
+        result, valid_file, staging_root = self._run_mixed_validity_list(
+            rimport_script, test_env, rimport_env, check=True
         )
-
-        # Verify failure: rc 2, all reasons present
-        assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
-        assert "2 of 3 file(s) failed pre-flight validation" in result.stderr
-        assert f"source not found: {missing_file}" in result.stderr
-        assert f"source is a directory, not a file: {bad_dir}" in result.stderr
 
         # Verify the valid entry's check status is NOT reported: --check never gets to run
         # per-file, so neither the "already published" nor "not already published" messages
