@@ -798,8 +798,9 @@ class TestMain:
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
     ):
         """Naming a file inside a directory that cannot be read is a user error, and the help
-        text promises exit 2 for one. Python 3.13's Path.is_dir() raises EACCES instead of
-        returning False, so an unguarded probe turns that into a stack trace."""
+        text promises exit 2 for one. Path.is_dir() propagates EACCES rather than returning
+        False -- it ignores only ENOENT, ENOTDIR, EBADF and ELOOP -- so an unguarded probe
+        turns that into a stack trace on every supported version."""
         inputdata_root = tmp_path / "inputdata"
         locked = inputdata_root / "locked"
         locked.mkdir(parents=True)

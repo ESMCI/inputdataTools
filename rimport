@@ -273,7 +273,9 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
         paths: Absolute paths from `normalize_paths`.
 
     Returns:
-        (entries, skips). `skips` carries directories that could not be read during a walk.
+        (entries, skips). `skips` carries directories that could not be read during a walk,
+        and any named path whose is_dir() probe itself raised -- a file under an unreadable
+        parent, say. Both are named, so `main` reports them as fatal pre-flight failures.
     """
     # Consumed twice -- once to walk, once to test provenance -- so a generator will not do.
     paths = list(paths)
@@ -287,7 +289,8 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
         try:
             is_real_dir = path.is_dir() and not path.is_symlink()
         except OSError as exc:
-            # Python 3.13's is_dir() re-raises EACCES instead of returning False, so a path
+            # Path.is_dir() ignores only ENOENT, ENOTDIR, EBADF and ELOOP. It propagates
+            # everything else -- EACCES included, on every supported version -- so a path
             # under an unreadable parent would abort the run with a traceback. Record it and
             # let main decide: every path here was NAMED by the user, so main routes it to
             # the fatal pre-flight block and the run exits 2 having published nothing.
