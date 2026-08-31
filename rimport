@@ -277,6 +277,25 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
     return entries, skips
 
 
+def report_skips(skips: List[Skip]) -> None:
+    """Re-list every skipped path at the very end of the run.
+
+    Each skip was already reported inline, at WARNING level, where it happened. This block
+    repeats them at ERROR level -- so stderr, and so surviving `-q` -- because in a run over
+    a large tree the inline warnings scroll away and the whole point is that a file which
+    went unpublished cannot be missed.
+
+    Args:
+        skips: Every skipped path with its reason. An empty list prints nothing.
+    """
+    if not skips:
+        return
+
+    logger.error("rimport: %d file(s) skipped (not stageable):", len(skips))
+    for skip in skips:
+        logger.error("%s%s: %s", INDENT, skip.path, skip.reason)
+
+
 def check_relink_worked(src: Path, dst: Path) -> None:
     """Check whether relink worked
 
@@ -694,39 +713,59 @@ def main(argv: List[str] | None = None) -> int:
     paths = normalize_paths(root, files_to_process)
     staging_root = get_staging_root()
 
-    # Pre-flight: validate every path before staging anything, so a batch containing a bad
-    # path is reported (all bad paths at once) instead of half-completing. Runs for --check
-    # too: a bad entry aborts the whole batch rather than being reported per-file.
-    failures = []
-    for p in paths:
-        error = validate_source_path(p, root, staging_root)
-        if error is not None:
-            failures.append((p, error))
-    if failures:
+    # Expand any directory argument into the files beneath it, tagging each path as named
+    # (the user asked for it) or discovered (a walk found it).
+    entries, skips = expand_directories(paths)
+
+    # Pre-flight: validate everything before staging anything. A NAMED bad path is fatal and
+    # aborts the whole batch, so a batch containing one is never half-completed. A DISCOVERED
+    # bad path is only a skip: one unstageable file inside a large tree must not block the
+    # thousands of good ones around it.
+    named_failures = []
+    to_stage = []
+    for entry in entries:
+        error = validate_source_path(entry.path, root, staging_root)
+        if error is None:
+            to_stage.append(entry.path)
+        elif entry.named:
+            named_failures.append((entry.path, error))
+        else:
+            logger.warning("%srimport: skipping '%s': %s", INDENT, entry.path, error)
+            skips.append(Skip(entry.path, error))
+
+    if named_failures:
         logger.error(
             "rimport: %d of %d file(s) failed pre-flight validation; nothing was published:",
-            len(failures),
-            len(paths),
+            len(named_failures),
+            len(entries),
         )
-        for p, error in failures:
-            logger.error("%srimport: '%s': %s", INDENT, p, error)
+        for path, error in named_failures:
+            logger.error("%srimport: '%s': %s", INDENT, path, error)
         return 2
 
     # Execute the new action per file
     errors = 0
-    for p in paths:
-        logger.info("'%s':", p)
+    for path in to_stage:
+        logger.info("'%s':", path)
         try:
-            stage_data(p, root, staging_root, args.check)
+            stage_data(path, root, staging_root, args.check)
         except Exception as e:  # pylint: disable=broad-exception-caught
             # General Exception keeps CLI robust for batch runs
             errors += 1
-            logger.error("%srimport: error processing %s: %s", INDENT, p, e)
+            logger.error("%srimport: error processing %s: %s", INDENT, path, e)
 
+    if not errors and not args.check:
+        logger.info("\nNo need to run relink.py")
+
+    # Last, so it cannot be scrolled past.
+    report_skips(skips)
+
+    # Precedence 2 > 1 > 3 > 0; 2 already returned above. A real staging failure must never
+    # be masked by "completed with skips".
     if errors:
         return 1
-    if not args.check:
-        logger.info("\nNo need to run relink.py")
+    if skips:
+        return 3
     return 0
 
 
