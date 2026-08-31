@@ -12,9 +12,25 @@ Notes:
 - The `relink.py` script was previously used for step 3 above, but that functionality is now built into `rimport`. It's still there if you want to use it by itself.
 - A relative filename passed to `rimport` directly (via `--file` or as a positional argument) is always resolved against your current directory — never against the inputdata root, and it doesn't matter whether you're running from inside or outside the inputdata tree. Pass an absolute path if you want to name a file without regard to your current directory.
 - A relative entry in a `--list` file is always resolved against that list file's own directory — again never against the inputdata root, wherever the list file itself lives. Pass absolute entries in the list if you want them independent of the list file's location.
-- Before staging anything, `rimport` validates every file it's about to process (all `--file`/`--list`/positional entries together). If any of them fail — missing, a directory, a broken symlink, outside the inputdata root, etc. — none of them are touched, and every failing path is reported at once so you can fix them all in one pass. This is a promise about rejected input, not about success: pre-flight passing doesn't guarantee the whole batch will finish, since a file can still fail later for a reason pre-flight can't see (e.g. a runtime/relink failure partway through).
+- Before staging anything, `rimport` validates every file it's about to process (all `--file`/`--list`/positional entries together). If any of them fail — missing, a broken symlink, outside the inputdata root, etc. — none of them are touched, and every failing path is reported at once so you can fix them all in one pass. This is a promise about rejected input, not about success: pre-flight passing doesn't guarantee the whole batch will finish, since a file can still fail later for a reason pre-flight can't see (e.g. a runtime/relink failure partway through).
 - `--check` is gated by the same pre-flight validation as a real run: if any file in the batch fails validation, `rimport` reports the failures and exits without checking (or reporting on) any of the other files. This is deliberate, not a bug — fix the bad entries and re-run to see the rest.
-- Exit codes: `0` means everything succeeded (or, under `--check`, everything checked cleanly); `2` means the run was rejected before touching anything (bad arguments, a missing/empty list file, or a pre-flight validation failure); `1` means pre-flight passed but something failed for real while actually being staged or relinked.
+
+### Directory arguments
+
+Any name you give `rimport` -- positional, `--file`, or a `--list` entry -- may be a directory. Every file beneath it is enumerated recursively and acted on. The directory itself is never copied to staging or replaced with a symlink. A symlink to a directory is the one carve-out: it is not expanded, and is treated as a single entry.
+
+A file found by enumeration that cannot be staged does not abort the run. It is reported, skipped, and repeated in a summary at the end so it does not scroll away. A bad name you gave directly is still fatal, and nothing is published.
+
+Exit codes:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Everything staged or checked, nothing skipped |
+| 1 | A file could not be staged |
+| 2 | A name you gave failed validation; nothing was published |
+| 3 | Finished, but one or more files were skipped (listed at the end) |
+
+When more than one code applies, the precedence is 2 > 1 > 3 > 0.
 
 ## Filenames and metadata:
 
