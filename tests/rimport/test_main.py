@@ -720,9 +720,13 @@ class TestMain:
         assert result == 2
         captured = capsys.readouterr()
         assert "nothing was published" in captured.err
+        # Pins the denominator too: `locked` never became an Entry, so a count taken from
+        # entries alone reports the nonsense "1 of 0". Two paths were considered here --
+        # `locked` and the good.nc discovered under `ok`.
+        assert "1 of 2 file(s) failed pre-flight validation" in captured.err
 
-        # The OTHER named argument must not have published.
-        assert not (staging_root / "ok" / "good.nc").exists()
+        # No named argument may have published -- not just the one that failed.
+        assert not any(staging_root.rglob("*"))
         assert not (other / "good.nc").is_symlink()
 
     @patch.object(rimport, "get_staging_root")
