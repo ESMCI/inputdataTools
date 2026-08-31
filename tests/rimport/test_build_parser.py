@@ -199,3 +199,24 @@ class TestBuildParser:
         captured = capsys.readouterr()
         stderr_lines = captured.err.strip().split("\n")
         assert "not allowed with argument" in stderr_lines[-1]
+
+    def test_help_documents_directory_expansion(self):
+        """A user reading --help must learn that a directory argument is enumerated."""
+        help_text = rimport.build_parser().format_help()
+
+        assert "director" in help_text.lower()
+        assert "recursiv" in help_text.lower()
+
+    def test_help_documents_that_directory_symlinks_are_not_expanded(self):
+        """The one surprising carve-out belongs in the help, not just the source."""
+        help_text = rimport.build_parser().format_help()
+
+        assert "symlink to a directory is not expanded" in help_text
+
+    def test_help_documents_all_four_exit_codes(self):
+        """Exit 3 is new and scriptable; all four codes must be discoverable."""
+        help_text = rimport.build_parser().format_help()
+
+        for code in ["0", "1", "2", "3"]:
+            assert f"{code}:" in help_text
+        assert "skipped" in help_text.lower()
