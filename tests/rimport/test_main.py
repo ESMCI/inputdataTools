@@ -791,3 +791,30 @@ class TestMain:
         assert not any(staging_root.rglob("*"))
         captured = capsys.readouterr()
         assert str(locked) in captured.out + captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_unreadable_parent_directory_is_an_error_not_a_traceback(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
+    ):
+        """Naming a file inside a directory that cannot be read is a user error, and the help
+        text promises exit 2 for one. Python 3.13's Path.is_dir() raises EACCES instead of
+        returning False, so an unguarded probe turns that into a stack trace."""
+        inputdata_root = tmp_path / "inputdata"
+        locked = inputdata_root / "locked"
+        locked.mkdir(parents=True)
+        (locked / "hidden.nc").write_text("data")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(locked / "hidden.nc")]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        assert not any(staging_root.rglob("*"))
