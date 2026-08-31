@@ -212,3 +212,43 @@ def test_named_unreadable_directory_is_not_warned_as_skipped(tmp_path, caplog):
         os.chmod(locked, 0o700)
 
     assert "skipping" not in caplog.text
+
+
+def test_named_unreadable_directory_is_not_warned_even_when_also_discovered(tmp_path, caplog):
+    """The guard must ask "did the user name this path?", not "is this the directory I am
+    walking right now?". Naming both a tree and an unreadable directory inside it made the
+    walk of the tree warn "skipping" for a path main then reports as a fatal failure -- the
+    self-contradiction the guard exists to prevent, reached by a different route."""
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "a.nc").write_text("a")
+    locked = d / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="rimport_relink"):
+            rimport.expand_directories([d, locked])
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert "skipping" not in caplog.text
+
+
+def test_expansion_count_is_logged_before_any_skip_warning(tmp_path, caplog):
+    """The count line is the blast radius, and it belongs at the top where it cannot be
+    pushed down the screen by one warning per unreadable directory."""
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "a.nc").write_text("a")
+    locked = d / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.INFO, logger="rimport_relink"):
+            rimport.expand_directories([d])
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert caplog.text.index("expanded 1 director(ies)") < caplog.text.index("skipping")
