@@ -200,9 +200,10 @@ class TestRimportCommandLine:
     ):
         """Test that a list file's relative entries anchor to the list file's own directory,
         not the cwd, even when rimport is run with its cwd inside the tree at a DIFFERENT
-        location. The existing e2e list test passes no cwd= to subprocess.run, so pytest's own
-        (outside-the-tree) cwd applies and cwd-anchoring and list-dir-anchoring agree; this test
-        sets cwd= explicitly so the two schemes can be told apart."""
+        location. test_list_inside_tree_relative_entries above passes no cwd= to
+        subprocess.run, so pytest's own (outside-the-tree) cwd applies and cwd-anchoring and
+        list-dir-anchoring agree; this test sets cwd= explicitly so the two schemes can be
+        told apart."""
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
 
@@ -737,12 +738,12 @@ class TestRimportCommandLine:
         """Test that a relative positional filename run from OUTSIDE the inputdata tree anchors
         to cwd and errors, rather than falling back to a same-named file at the inputdata root.
 
-        This is the configuration the deleted root-fallback actually operated in: with cwd
-        inside the tree the old dual-mode code already anchored to cwd, so the sibling tests
-        above would have passed against it unmodified. Only an outside-the-tree cwd
-        discriminates the old behavior (silently stage the root file, rc 0) from the new one
-        (error, stage nothing). The decoy is what makes it discriminating: without a file at
-        the root-anchored path there would be nothing for a regression to wrongly publish.
+        An outside-the-tree cwd is essential here: with cwd inside the tree, root-anchored and
+        cwd-anchored resolution agree, so the sibling tests above would pass either way. Only
+        placing cwd outside the tree discriminates root-anchored resolution (which would
+        silently stage the root file, rc 0) from cwd-anchored resolution (error, stage
+        nothing). The decoy is what makes it discriminating: without a file at the
+        root-anchored path there would be nothing for a regression to wrongly publish.
         """
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
@@ -773,8 +774,8 @@ class TestRimportCommandLine:
             cwd=outside,
         )
 
-        # Verify failure. Deliberately not pinning the exact code: pre-flight validation
-        # (a later task) shifts this class of user error from 1 to 2.
+        # Verify failure. Deliberately not pinning the exact return code, since it may change
+        # in the future for any reason.
         assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
 
         # Verify the decoy at the inputdata root was NOT published
@@ -990,8 +991,8 @@ class TestRimportCommandLine:
         itself and running that root through the destructive replace-with-symlink path."""
         inputdata_root = test_env["inputdata_root"]
         # staging_root itself need not be assigned here — the fixture already created it, and
-        # its mere existence is what makes dst.exists() true for rel="." (see the brief: this is
-        # what turns an unset shell variable into a whole-tree rename).
+        # its mere existence is what makes dst.exists() true for rel="." — the same thing that
+        # turns an unset shell variable into a whole-tree rename.
 
         marker_file = inputdata_root / "marker.nc"
         marker_file.write_text("root marker")
@@ -1035,8 +1036,8 @@ class TestRimportCommandLine:
         self, rimport_script, test_env, rimport_env
     ):
         """Test that --check on a directory argument reports it as an error, rather than
-        claiming (as it did before the guard) that the directory is already published but not
-        linked and available for download."""
+        misreporting the directory as already published but not linked and available for
+        download."""
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
 
@@ -1084,7 +1085,7 @@ class TestRimportCommandLine:
     def _run_mixed_validity_list(self, rimport_script, test_env, rimport_env, *, check):
         """Set up a --list with one valid entry (good.nc) and two entries that are invalid
         in DIFFERENT ways (missing.nc, and a directory named adir), all as absolute paths in
-        a list file OUTSIDE the inputdata tree, then run rimport.py against it -- with
+        a list file OUTSIDE the inputdata tree, then run rimport against it -- with
         --check when `check` is True (which also requires deleting
         RIMPORT_SKIP_USER_CHECK, since --check needs ensure_running_as() to actually run),
         without it otherwise.
@@ -1093,9 +1094,10 @@ class TestRimportCommandLine:
         and test_check_mode_is_gated_too_and_reports_nothing_for_valid_entry. The two tests
         differ in `check` and, more importantly, in what each one's own payoff assertions
         check afterward -- see each test's docstring. This helper asserts only the rc-2 and
-        failure-reason outcome that is IDENTICAL for both callers and that neither test
-        discriminates on; the payoff assertions that make each test meaningful stay in the
-        tests, not here.
+        failure-reason outcome that is IDENTICAL for both callers; those assertions still
+        matter (they would catch the pre-flight gate failing to fire at all) but are not what
+        tells the two tests apart -- the payoff assertions that make each test meaningful stay
+        in the tests, not here.
 
         Returns (result, valid_file, staging_root) for the caller to assert against.
         """
@@ -1153,8 +1155,7 @@ class TestRimportCommandLine:
         with rc 2, reports every failure reason, gets the "N of M" count right, and — the
         assertion that matters most — never stages or relinks the valid entry.
 
-        The list file lives OUTSIDE the inputdata tree with absolute entries (this configuration
-        previously had no end-to-end coverage at all)."""
+        The list file lives OUTSIDE the inputdata tree with absolute entries."""
         _result, valid_file, staging_root = self._run_mixed_validity_list(
             rimport_script, test_env, rimport_env, check=False
         )
@@ -1174,10 +1175,10 @@ class TestRimportCommandLine:
         valid and invalid entries aborts with rc 2 and the valid entry's status is NOT
         reported.
 
-        This pins a deliberate design decision (uniform abort, chosen over per-file --check
+        This pins a deliberate design decision: uniform abort, chosen over per-file --check
         reporting, even though it means a --check run tells you nothing about the files that
-        would have been fine) — a future reader should not "fix" this into per-file --check
-        reporting without first re-litigating that choice with the repo owner."""
+        would have been fine. A future reader should not silently "fix" this into per-file
+        --check reporting -- that would be a deliberate change in behavior, not a bug fix."""
         result, valid_file, staging_root = self._run_mixed_validity_list(
             rimport_script, test_env, rimport_env, check=True
         )

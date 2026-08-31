@@ -222,11 +222,10 @@ class TestGetRelnamesToProcess:
         assert files_to_process == [str(root_resolved / f) for f in filenames]
 
     def test_list_outside_tree_relative_entry_anchors_to_list_dir(self, tmp_path, monkeypatch):
-        """Test that a relative entry in a list file OUTSIDE the tree now anchors to the list
-        file's own directory instead of erroring (the deleted root-fallback used to make this a
-        fatal error). Discriminating setup: cwd is neither the list dir nor the inputdata root,
-        so the assertion can distinguish list-dir-anchoring from cwd-anchoring and from the
-        (now-impossible) root-anchoring."""
+        """Test that a relative entry in a list file OUTSIDE the tree anchors to the list
+        file's own directory rather than erroring. Discriminating setup: cwd is neither the
+        list dir nor the inputdata root, so the assertion can distinguish list-dir-anchoring
+        from cwd-anchoring and from root-anchoring."""
         # Setup
         list_dir = tmp_path / "outside" / "listdir"
         list_dir.mkdir(parents=True)
@@ -482,8 +481,8 @@ class TestGetRelnamesToProcess:
 
     def test_cli_relative_cwd_outside_tree_still_anchors_to_cwd(self, tmp_path, monkeypatch):
         """Test that a relative --file name anchors to cwd even when cwd is outside the
-        inputdata tree: there is no inside/outside distinction any more, one rule applies
-        everywhere, with no root-relative fallback."""
+        inputdata tree: there is no inside/outside distinction, one rule applies everywhere,
+        with no root-relative fallback."""
         outside = tmp_path / "outside"
         outside.mkdir()
         monkeypatch.chdir(outside)
@@ -567,8 +566,8 @@ class TestGetRelnamesToProcess:
     def test_deleted_cwd_with_absolute_names_still_works(self, tmp_path, monkeypatch, caplog):
         """Test that a deleted cwd does not raise: absolute names are returned unchanged since
         cwd is irrelevant to resolving them. Simulates a deleted cwd for real (not mocked): chdir
-        into a directory, then remove it out from under the process (confirmed to actually raise
-        FileNotFoundError from Path.cwd() on this platform before writing this test)."""
+        into a directory, then remove it out from under the process, which raises
+        FileNotFoundError from Path.cwd() on this platform."""
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
         abs_file = str(inputdata_root / "test.nc")
@@ -593,10 +592,10 @@ class TestGetRelnamesToProcess:
         assert "working directory" not in caplog.text.lower()
 
     def test_deleted_cwd_with_relative_name_errors(self, tmp_path, monkeypatch, caplog):
-        """Test that a deleted cwd is now a FATAL error for relative names, rather than falling
-        back to root-relative resolution: with no fallback, there is nothing left to anchor a
-        relative name against. Confirms rc 2, files_to_process is None, and that the error
-        message names the offending relative name."""
+        """Test that a deleted cwd is a fatal error for relative names: with no root-relative
+        fallback, there is nothing left to anchor a relative name against. Confirms rc 2,
+        files_to_process is None, and that the error message names the offending relative
+        name."""
         filename = "test.nc"
 
         deleted_dir = tmp_path / "deleted"
@@ -622,8 +621,9 @@ class TestGetRelnamesToProcess:
         self, tmp_path, monkeypatch, caplog
     ):
         """Test that when a deleted cwd leaves several relative names unresolvable, the error
-        message names ALL of them, not just the first -- Sam's stated preference is to fail
-        before doing anything and name every offending input, not just one."""
+        message names ALL of them, not just the first -- failing before doing anything and
+        naming every offending input at once gives the user everything they need to fix in one
+        pass, rather than fixing inputs one at a time across repeated runs."""
         filename = "test.nc"
         item_names = ["a.txt", "b.txt"]
 
