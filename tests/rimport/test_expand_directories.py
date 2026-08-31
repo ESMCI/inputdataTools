@@ -157,3 +157,58 @@ def test_no_expansion_logs_no_count_line(tmp_path, caplog):
         rimport.expand_directories([f])
 
     assert "expanded" not in caplog.text
+
+
+def test_unreadable_directory_does_not_warn_that_it_is_empty(tmp_path, caplog):
+    """A directory that could not be read is not an empty directory. Saying "no files found"
+    for it contradicts the Permission denied reported for the same path."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (locked / "hidden.nc").write_text("data")
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="rimport_relink"):
+            entries, skips = rimport.expand_directories([locked])
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert entries == []
+    assert len(skips) == 1
+    assert "no files found" not in caplog.text
+
+
+def test_discovered_walk_skip_is_warned_where_it_happened(tmp_path, caplog):
+    """The spec promises every skip is reported twice. The end-of-run summary is the second
+    report; this is the first, and without it a skip during a fatal abort is reported zero
+    times."""
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "a.nc").write_text("a")
+    locked = d / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="rimport_relink"):
+            rimport.expand_directories([d])
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert f"skipping '{locked}'" in caplog.text
+
+
+def test_named_unreadable_directory_is_not_warned_as_skipped(tmp_path, caplog):
+    """The counterpart. Since Task 11c a NAMED unreadable directory is fatal, so main reports
+    it as a failure; warning "skipping" here too would contradict "nothing was published"."""
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="rimport_relink"):
+            rimport.expand_directories([locked])
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert "skipping" not in caplog.text

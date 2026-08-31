@@ -758,3 +758,36 @@ class TestMain:
         assert (staging_root / "tree" / "good.nc").read_text() == "good"
         captured = capsys.readouterr()
         assert "skipped (not stageable)" in captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_walk_skip_is_still_reported_when_the_run_aborts(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A named failure returns before the end-of-run summary, so a walk skip that is not
+        reported inline is never reported at all -- breaking the spec's promise that every
+        skip is reported twice."""
+        inputdata_root = tmp_path / "inputdata"
+        tree = inputdata_root / "tree"
+        tree.mkdir(parents=True)
+        (tree / "good.nc").write_text("good")
+        locked = tree / "locked"
+        locked.mkdir()
+        (locked / "hidden.nc").write_text("data")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        missing = inputdata_root / "missing.nc"
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(tree), str(missing)]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        assert not any(staging_root.rglob("*"))
+        captured = capsys.readouterr()
+        assert str(locked) in captured.out + captured.err
