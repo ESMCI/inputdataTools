@@ -637,6 +637,10 @@ class TestMain:
         assert not (subdir / "good.nc").is_symlink()
         captured = capsys.readouterr()
         assert "nothing was published" in captured.err
+        # Pins the named-vs-discovered split itself: only the named `missing` is fatal,
+        # so the count is 1 of 2 (good.nc, discovered under subdir, does not count against
+        # it) -- not 2 of 2, which is what today's un-enumerated pre-flight gate reports.
+        assert "1 of 2 file(s) failed pre-flight validation" in captured.err
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
