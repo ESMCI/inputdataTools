@@ -273,9 +273,11 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
         paths: Absolute paths from `normalize_paths`.
 
     Returns:
-        (entries, skips). `skips` carries directories that could not be read during a walk,
-        and any named path whose is_dir() probe itself raised -- a file under an unreadable
-        parent, say. Both are named, so `main` reports them as fatal pre-flight failures.
+        (entries, skips). `skips` carries two things: directories that could not be read
+        during a walk, and named paths whose is_dir() probe itself raised (a file under an
+        unreadable parent, say). Provenance is NOT recorded here -- `main` recovers it by
+        testing each skip's path against the paths the user named, and a walk skip is
+        usually discovered, so it warns and skips with exit 3 rather than aborting.
     """
     # Consumed twice -- once to walk, once to test provenance -- so a generator will not do.
     paths = list(paths)
