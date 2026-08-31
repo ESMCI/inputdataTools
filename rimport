@@ -62,8 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
             "exit codes:\n"
             "  0: everything staged or checked, nothing skipped\n"
             "  1: a file could not be staged\n"
-            "  2: a name you gave failed validation; nothing was published\n"
+            "  2: nothing was published -- a bad command line, a missing or empty\n"
+            "     --list file, or a name you gave failing validation\n"
             "  3: finished, but one or more files were skipped (listed at the end)\n"
+            "\n"
+            "a name you gave failing is fatal (2). a file found by expanding a\n"
+            "directory you named is skipped instead, and the run continues (3).\n"
+            "when several apply, the precedence is 2 > 1 > 3 > 0.\n"
         ),
         formatter_class=_EpilogRawFormatter,
         add_help=False,  # Disable automatic help to add custom -help flag
@@ -77,8 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Provide a file to import. Must be in the CESM inputdata directory. A relative name"
             " is resolved against the current directory; there is no fallback to the"
-            " inputdata root. If the name is a directory, every file beneath it is enumerated recursively and"
-            " acted on; a symlink to a directory is not expanded."
+            " inputdata root. If the name is a directory, every file beneath it is"
+            " enumerated recursively and acted on; a symlink to a directory is not expanded."
         ),
     )
 
@@ -90,8 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Provide a file that contains a list of filenames to import. All filenames in the list"
             " must be in the CESM inputdata directory. A relative entry is resolved against the"
-            " list file's own directory, wherever that directory is. A list entry naming a directory is enumerated recursively, the same as a name given"
-            " on the command line."
+            " list file's own directory, wherever that directory is. A list entry naming a"
+            " directory is enumerated recursively, the same as a name given on the command"
+            " line."
         ),
     )
 
@@ -101,8 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "One or more files to process. (Optional; can use --file instead to process just one.)"
             " A relative name is resolved against the current directory; there is no fallback to"
-            " the inputdata root. If the name is a directory, every file beneath it is enumerated recursively and"
-            " acted on; a symlink to a directory is not expanded."
+            " the inputdata root. If the name is a directory, every file beneath it is"
+            " enumerated recursively and acted on; a symlink to a directory is not expanded."
         ),
     )
 
