@@ -275,6 +275,9 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
     Returns:
         (entries, skips). `skips` carries directories that could not be read during a walk.
     """
+    # Consumed twice -- once to walk, once to test provenance -- so a generator will not do.
+    paths = list(paths)
+    named_paths = set(paths)
     named_by_path: dict[Path, bool] = {}
     skips: List[Skip] = []
     n_dirs = 0
@@ -285,15 +288,6 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
             n_dirs += 1
             found, walk_skips = walk_files(path)
             skips.extend(walk_skips)
-            for skip in walk_skips:
-                # Report a DISCOVERED skip where it happened; the end-of-run summary repeats
-                # it. A skip whose path is the directory being walked is the one the user
-                # NAMED, which main reports as a fatal failure -- calling that "skipping"
-                # here would contradict "nothing was published".
-                if skip.path != path:
-                    logger.warning(
-                        "%srimport: skipping '%s': %s", INDENT, skip.path, skip.reason
-                    )
             if not found and not walk_skips:
                 logger.warning("rimport: no files found under %s", path)
             for found_path in found:
@@ -307,6 +301,16 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
         logger.info(
             "rimport: expanded %d director(ies) to %d file(s)", n_dirs, len(expanded_files)
         )
+
+    for skip in skips:
+        # Report a DISCOVERED skip here, during expansion, where the run reached it; the
+        # end-of-run summary repeats it. A skip the user NAMED is not reported here at all:
+        # main treats it as a fatal failure, and calling it "skipping" would contradict the
+        # "nothing was published" that follows. Ask the question main asks -- was this path
+        # named? -- not "is this the directory being walked": a directory can be named AND
+        # discovered beneath another named one, and then both are true of it.
+        if skip.path not in named_paths:
+            logger.warning("%srimport: skipping '%s': %s", INDENT, skip.path, skip.reason)
 
     entries = [Entry(path, named) for path, named in named_by_path.items()]
     return entries, skips
