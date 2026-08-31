@@ -928,13 +928,13 @@ class TestRimportCommandLine:
         assert "Created symbolic link".lower() not in result.stdout.lower()
         assert "Error creating symlink".lower() not in result.stdout.lower()
 
-    def test_directory_argument_from_subdir_errors_and_leaves_tree_intact(
+    def test_directory_argument_from_subdir_stages_contents_and_leaves_tree_intact(
         self, rimport_script, test_env, rimport_env
     ):
         """Test that pointing rimport at a directory (e.g. via the cwd-anchored positional from
-        inside an inputdata subdir) errors cleanly instead of falling into the destructive
-        replace-with-symlink path, which would rename the directory to '<name>.tmp', symlink it
-        away, and then fail to roll back."""
+        inside an inputdata subdir) enumerates the files beneath it and stages them, instead of
+        falling into the destructive replace-with-symlink path, which would rename the directory
+        itself to '<name>.tmp', symlink it away, and then fail to roll back."""
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
 
@@ -967,28 +967,28 @@ class TestRimportCommandLine:
             cwd=subdir.parent,
         )
 
-        # Verify failure
-        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
-        assert "directory" in result.stderr
-        assert "not a file" in result.stderr
+        assert result.returncode == 0, f"Command unexpectedly failed: {result.stderr}"
 
-        # Verify the tree is intact: clm2 is still a real directory, not a symlink; no
-        # '<name>.tmp' path was left anywhere under inputdata_root; and its contents are
-        # untouched.
+        # The file inside was published and relinked.
+        assert (staging_mirror / "data.nc").read_text() == "clm2 data"
+        assert inner_file.is_symlink()
+
+        # The 75c79cd anti-corruption assertion, preserved: the DIRECTORY itself was never
+        # renamed, never symlinked away, and no failed-rollback '.tmp' was left behind.
         assert subdir.is_dir() and not subdir.is_symlink(), (
-            f"clm2 should still be a plain, non-symlink directory after the error; "
+            f"clm2 should still be a plain, non-symlink directory; "
             f"is_dir={subdir.is_dir()} is_symlink={subdir.is_symlink()}"
         )
         tmp_paths = list(inputdata_root.rglob("*.tmp"))
         assert not tmp_paths, f"Found unexpected '.tmp' path(s) left behind: {tmp_paths}"
-        assert inner_file.read_text() == "clm2 data"
 
     def test_empty_string_argument_errors_and_leaves_tree_intact(
         self, rimport_script, test_env, rimport_env
     ):
         """Test that an empty-string positional (as from an unset shell variable, e.g.
         `rimport "$maybe_unset"`) errors cleanly instead of anchoring to the inputdata root
-        itself and running that root through the destructive replace-with-symlink path."""
+        itself and, now that directories are enumerated, recursively publishing the whole
+        subtree."""
         inputdata_root = test_env["inputdata_root"]
         # staging_root itself need not be assigned here — the fixture already created it, and
         # its mere existence is what makes dst.exists() true for rel="." — the same thing that
@@ -1018,26 +1018,19 @@ class TestRimportCommandLine:
         )
 
         # Verify failure
-        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
-        assert "directory" in result.stderr
-        assert "not a file" in result.stderr
+        assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
+        assert "empty filename" in result.stderr
 
-        # Verify the inputdata root itself is untouched: still a real directory, not renamed,
-        # not replaced with a symlink, no '.tmp' sibling.
-        assert inputdata_root.is_dir() and not inputdata_root.is_symlink(), (
-            f"inputdata root should still be a plain, non-symlink directory after the error; "
-            f"is_dir={inputdata_root.is_dir()} is_symlink={inputdata_root.is_symlink()}"
-        )
-        tmp_siblings = list(inputdata_root.parent.glob(f"{inputdata_root.name}.tmp"))
-        assert not tmp_siblings, f"Found unexpected '.tmp' sibling(s): {tmp_siblings}"
-        assert marker_file.read_text() == "root marker"
+        # The inputdata root was NOT expanded and published wholesale.
+        assert not list(test_env["staging_root"].rglob("*"))
+        assert not marker_file.is_symlink()
 
-    def test_check_directory_argument_reports_error_not_publishable(
+    def test_check_directory_argument_reports_each_file_inside(
         self, rimport_script, test_env, rimport_env
     ):
-        """Test that --check on a directory argument reports it as an error, rather than
-        misreporting the directory as already published but not linked and available for
-        download."""
+        """Test that --check on a directory argument enumerates the files beneath it and
+        reports on each one individually, rather than describing the directory itself as
+        already published or available for download."""
         inputdata_root = test_env["inputdata_root"]
         staging_root = test_env["staging_root"]
 
@@ -1068,24 +1061,25 @@ class TestRimportCommandLine:
             cwd=subdir.parent,
         )
 
-        # Verify failure
-        assert result.returncode != 0, f"Command unexpectedly passed: {result.stdout}"
-        assert "directory" in result.stderr
-        assert "not a file" in result.stderr
+        assert result.returncode == 0, f"Command unexpectedly failed: {result.stderr}"
 
-        # Verify --check does NOT claim the directory is already published / downloadable
-        assert "already published" not in result.stdout.lower()
+        # --check reports on the file inside, and stages nothing.
+        assert "data.nc" in result.stdout
+        assert not (staging_mirror / "data.nc").exists()
+        assert not inner_file.is_symlink()
+
+        # The file is reported on its own terms, and the directory itself is never
+        # described as published or downloadable.
+        assert "not already published" in result.stdout
         assert "available for download" not in result.stdout.lower()
-
-        # Verify the tree is intact
         assert subdir.is_dir() and not subdir.is_symlink()
         assert not list(inputdata_root.rglob("*.tmp"))
         assert inner_file.read_text() == "clm2 data"
 
     def _run_mixed_validity_list(self, rimport_script, test_env, rimport_env, *, check):
         """Set up a --list with one valid entry (good.nc) and two entries that are invalid
-        in DIFFERENT ways (missing.nc, and a directory named adir), all as absolute paths in
-        a list file OUTSIDE the inputdata tree, then run rimport against it -- with
+        in DIFFERENT ways (missing.nc, and a broken symlink named broken.nc), all as absolute
+        paths in a list file OUTSIDE the inputdata tree, then run rimport against it -- with
         --check when `check` is True (which also requires deleting
         RIMPORT_SKIP_USER_CHECK, since --check needs ensure_running_as() to actually run),
         without it otherwise.
@@ -1110,12 +1104,12 @@ class TestRimportCommandLine:
 
         missing_file = inputdata_root / "missing.nc"
 
-        bad_dir = inputdata_root / "adir"
-        bad_dir.mkdir()
+        broken_link = inputdata_root / "broken.nc"
+        broken_link.symlink_to(inputdata_root / "nonexistent_target.nc")
 
         # List file OUTSIDE the tree, with absolute entries.
         filelist = tmp_path / "filelist.txt"
-        filelist.write_text(f"{valid_file}\n{missing_file}\n{bad_dir}\n")
+        filelist.write_text(f"{valid_file}\n{missing_file}\n{broken_link}\n")
 
         command = [
             sys.executable,
@@ -1143,7 +1137,7 @@ class TestRimportCommandLine:
         assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
         assert "2 of 3 file(s) failed pre-flight validation" in result.stderr
         assert f"source not found: {missing_file}" in result.stderr
-        assert f"source is a directory, not a file: {bad_dir}" in result.stderr
+        assert f"Source is a broken symlink: {broken_link}" in result.stderr
 
         return result, valid_file, staging_root
 
@@ -1151,7 +1145,7 @@ class TestRimportCommandLine:
         self, rimport_script, test_env, rimport_env
     ):
         """Test the pre-flight gate end to end: a --list with one valid entry and two entries
-        that are invalid in DIFFERENT ways (missing, and a directory) aborts the whole batch
+        that are invalid in DIFFERENT ways (missing, and a broken symlink) aborts the whole batch
         with rc 2, reports every failure reason, gets the "N of M" count right, and — the
         assertion that matters most — never stages or relinks the valid entry.
 
@@ -1193,3 +1187,123 @@ class TestRimportCommandLine:
         # Verify nothing was staged
         assert not any(staging_root.rglob("*"))
         assert not valid_file.is_symlink()
+
+    def test_directory_argument_recurses_into_subdirectories(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """Enumeration is recursive, and the mirrored staging structure is preserved."""
+        inputdata_root = test_env["inputdata_root"]
+        staging_root = test_env["staging_root"]
+
+        deep = inputdata_root / "lnd" / "clm2" / "paramdata"
+        deep.mkdir(parents=True)
+        (inputdata_root / "lnd" / "top.nc").write_text("top")
+        (deep / "deep.nc").write_text("deep")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                rimport_script,
+                str(inputdata_root / "lnd"),
+                "-inputdata",
+                str(inputdata_root),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        assert result.returncode == 0, f"Command unexpectedly failed: {result.stderr}"
+        assert (staging_root / "lnd" / "top.nc").read_text() == "top"
+        assert (staging_root / "lnd" / "clm2" / "paramdata" / "deep.nc").read_text() == "deep"
+
+    def test_skip_summary_repeats_skipped_files_on_stderr_at_the_end(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """A skipped file must survive a long scroll: reported inline on stdout, then
+        repeated in a summary block on stderr after everything else."""
+        inputdata_root = test_env["inputdata_root"]
+
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir()
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                rimport_script,
+                str(subdir),
+                "-inputdata",
+                str(inputdata_root),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        assert result.returncode == 3
+        assert "1 file(s) skipped (not stageable)" in result.stderr
+        assert "broken.nc" in result.stderr
+        # The summary is the LAST thing on stderr. The broken-symlink message names the
+        # link itself, not its target, so the final line ends with broken.nc.
+        assert result.stderr.rstrip().endswith("broken.nc")
+
+    def test_skip_summary_survives_quiet_mode(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """-q hides progress but must not hide what went unpublished."""
+        inputdata_root = test_env["inputdata_root"]
+
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir()
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                rimport_script,
+                str(subdir),
+                "-inputdata",
+                str(inputdata_root),
+                "-q",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        assert result.returncode == 3
+        assert "1 file(s) skipped (not stageable)" in result.stderr
+
+    def test_expansion_count_is_logged_before_staging(
+        self, rimport_script, test_env, rimport_env
+    ):
+        """The blast radius is visible before anything is written."""
+        inputdata_root = test_env["inputdata_root"]
+
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir()
+        (subdir / "a.nc").write_text("a")
+        (subdir / "b.nc").write_text("b")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                rimport_script,
+                str(subdir),
+                "-inputdata",
+                str(inputdata_root),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=rimport_env,
+        )
+
+        assert result.returncode == 0
+        assert "expanded 1 director(ies) to 2 file(s)" in result.stdout
