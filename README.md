@@ -19,6 +19,12 @@ Notes:
 
 Any name you give `rimport` — positional, `--file`, or a `--list` entry — may be a directory inside the inputdata tree. Every file beneath it is enumerated recursively and acted on. A directory outside the tree is rejected without being enumerated, exactly as a file outside it is. The directory itself is never copied to staging or replaced with a symlink. A symlink to a directory is the one carve-out: it is not expanded, and is treated as a single entry.
 
+Why symlinks to directories are left alone, rather than enumerated:
+
+- Naming one already meant something before directories could be named at all, and that meaning is unchanged: if it points into the staging directory it is reported as already published, and otherwise it is an error.
+- A symlink into staging is what `rimport` itself creates, so a symlink here is usually a published file rather than a detour to follow. Treating it as a single entry is what lets you re-run `rimport` over a tree it has already published.
+- Enumeration never follows a directory symlink either, so it cannot loop on a link that points at its own ancestor, and cannot wander outside the directory you named and publish files you did not ask for. The rule for a name you give matches the rule used while walking, so a path behaves the same whichever way `rimport` reaches it.
+
 A file found by enumeration that cannot be staged does not abort the run. It is reported, skipped, and repeated in a summary at the end so it does not scroll away. A bad name you gave directly is still fatal, and nothing is published.
 
 Exit codes:
