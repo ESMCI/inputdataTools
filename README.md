@@ -17,7 +17,7 @@ Notes:
 
 ### Directory arguments
 
-Any name you give `rimport` — positional, `--file`, or a `--list` entry — may be a directory. Every file beneath it is enumerated recursively and acted on. The directory itself is never copied to staging or replaced with a symlink. A symlink to a directory is the one carve-out: it is not expanded, and is treated as a single entry.
+Any name you give `rimport` — positional, `--file`, or a `--list` entry — may be a directory inside the inputdata tree. Every file beneath it is enumerated recursively and acted on. A directory outside the tree is rejected without being enumerated, exactly as a file outside it is. The directory itself is never copied to staging or replaced with a symlink. A symlink to a directory is the one carve-out: it is not expanded, and is treated as a single entry.
 
 A file found by enumeration that cannot be staged does not abort the run. It is reported, skipped, and repeated in a summary at the end so it does not scroll away. A bad name you gave directly is still fatal, and nothing is published.
 

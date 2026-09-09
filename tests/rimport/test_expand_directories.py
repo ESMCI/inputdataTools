@@ -346,3 +346,21 @@ def test_directory_at_the_root_itself_is_expanded(tmp_path):
     entries, _skips = rimport.expand_directories([root], root)
 
     assert entries == [rimport.Entry(root / "a.nc", False)]
+
+
+def test_scope_is_decided_after_resolving_symlinks(tmp_path):
+    """The scope test resolves both sides, matching validate_source_path, so a directory
+    reached through a symlinked parent is judged by where it really is rather than by how it
+    was spelled. A lexical test would call this one outside the root and decline to expand
+    it; the two checks would then disagree about the same path."""
+    root = tmp_path / "inputdata"
+    (root / "lnd").mkdir(parents=True)
+    (root / "lnd" / "a.nc").write_text("a")
+    # A door into the tree from outside it. Spelled through here, the path is lexically
+    # outside `root` but resolves inside.
+    door = tmp_path / "door"
+    door.symlink_to(root)
+
+    entries, _skips = rimport.expand_directories([door / "lnd"], root)
+
+    assert entries == [rimport.Entry(door / "lnd" / "a.nc", False)]

@@ -758,6 +758,8 @@ class TestMain:
         assert "nothing was published" in captured.err
         # The directory itself is the failure, named once. Not its contents.
         assert "1 of 1 file(s) failed pre-flight validation" in captured.err
+        # The reason must be the actionable one, not the is-a-directory backstop.
+        assert "source not under inputdata root" in captured.err
         assert str(outside / "a.nc") not in captured.err
         # Nothing beneath it may have been enumerated.
         assert "expanded" not in captured.out

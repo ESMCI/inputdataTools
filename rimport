@@ -106,9 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         help=(
             "One or more files to process. (Optional; can use --file instead to process just one.)"
-            " A relative name is resolved against the current directory; there is no fallback to"
-            " the inputdata root. If the name is a directory, every file beneath it is"
-            " enumerated recursively and acted on; a symlink to a directory is not expanded."
+            " Must be in the CESM inputdata directory. A relative name is resolved against the"
+            " current directory; there is no fallback to the inputdata root. If the name is a"
+            " directory, every file beneath it is enumerated recursively and acted on; a symlink"
+            " to a directory is not expanded."
         ),
     )
 
@@ -406,11 +407,11 @@ def validate_source_path(
 ) -> Exception | None:
     """Run stage_data's read-only guardrails against `src` without raising or logging.
 
-    This is the pre-flight half of `stage_data`'s checks: broken symlink, live symlink whose
-    target is outside staging, missing file, directory, outside the inputdata root, and already
-    under the staging directory. It performs no I/O beyond stat-ing `src` and its resolved
-    target — in particular it never makes a network call — so it is cheap to run over an entire
-    batch before anything is staged.
+    This is the pre-flight half of `stage_data`'s checks, in the order they run: broken
+    symlink, live symlink whose target is outside staging, missing file, outside the inputdata
+    root, already under the staging directory, and directory. It performs no I/O beyond
+    stat-ing `src` and its resolved target — in particular it never makes a network call — so
+    it is cheap to run over an entire batch before anything is staged.
 
     Critically, a *live* symlink whose target resolves under `staging_root` is NOT a failure:
     that is the normal state of a file that has already been published and linked by a previous

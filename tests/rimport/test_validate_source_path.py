@@ -114,6 +114,28 @@ def test_error_directory(tmp_path):
     assert "source is a directory, not a file" in str(result)
 
 
+def test_error_directory_outside_root_names_containment_not_directoryness(tmp_path):
+    """Containment is diagnosed before the is-a-directory backstop, so the message names the
+    reason the user can act on. Told "source is a directory, not a file" they would
+    reasonably answer that directories are supported now.
+
+    Directories inside the root never reach this in a normal run -- they are expanded -- so
+    the backstop above and this case are the two orderings that have to stay distinguished.
+    """
+    inputdata_root = tmp_path / "inputdata"
+    inputdata_root.mkdir()
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+
+    src = tmp_path / "elsewhere"
+    src.mkdir()
+
+    result = rimport.validate_source_path(src, inputdata_root, staging_root)
+    assert isinstance(result, RuntimeError)
+    assert "source not under inputdata root" in str(result)
+    assert "not a file" not in str(result)
+
+
 def test_error_file_outside_inputdata_root(tmp_path):
     """A regular file outside the inputdata root returns a RuntimeError, unraised."""
     inputdata_root = tmp_path / "inputdata"
