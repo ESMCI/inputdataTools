@@ -731,6 +731,40 @@ class TestMain:
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
+    def test_named_directory_outside_the_inputdata_root_is_rejected_not_walked(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A named FILE outside the inputdata root has always been fatal. A directory must not
+        get a softer verdict just because it can now be expanded: walking it turns the user's
+        own bad argument into a pile of discovered skips and a "finished" exit 3.
+
+        It must also not be walked at all. Expansion recurses, so a mistyped `rimport ~`
+        would otherwise stat an arbitrarily large tree before rejecting every file in it.
+        """
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        outside = tmp_path / "elsewhere"
+        (outside / "deep").mkdir(parents=True)
+        (outside / "a.nc").write_text("a")
+        (outside / "deep" / "b.nc").write_text("b")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(outside)])
+
+        assert result == 2
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+        # The directory itself is the failure, named once. Not its contents.
+        assert "1 of 1 file(s) failed pre-flight validation" in captured.err
+        assert str(outside / "a.nc") not in captured.err
+        # Nothing beneath it may have been enumerated.
+        assert "expanded" not in captured.out
+        assert not any(staging_root.rglob("*"))
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
     def test_naming_an_unreadable_directory_twice_reports_it_once(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
     ):
