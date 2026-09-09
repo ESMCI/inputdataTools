@@ -29,7 +29,7 @@ def test_directory_expands_to_discovered_files(tmp_path):
     (d / "a.nc").write_text("a")
     (d / "b.nc").write_text("b")
 
-    entries, skips = rimport.expand_directories([d])
+    entries, skips = rimport.expand_directories([d], tmp_path)
 
     assert skips == []
     assert entries == [
@@ -43,7 +43,7 @@ def test_plain_file_passes_through_as_named(tmp_path):
     f = tmp_path / "f.nc"
     f.write_text("data")
 
-    entries, _skips = rimport.expand_directories([f])
+    entries, _skips = rimport.expand_directories([f], tmp_path)
 
     assert entries == [rimport.Entry(f, True)]
 
@@ -52,7 +52,7 @@ def test_nonexistent_path_passes_through_as_named(tmp_path):
     """Expansion does not validate. A missing path stays named so pre-flight can reject it."""
     missing = tmp_path / "missing.nc"
 
-    entries, _skips = rimport.expand_directories([missing])
+    entries, _skips = rimport.expand_directories([missing], tmp_path)
 
     assert entries == [rimport.Entry(missing, True)]
 
@@ -68,7 +68,7 @@ def test_symlink_to_directory_is_not_expanded(tmp_path):
     link = tmp_path / "dirlink"
     link.symlink_to(real_dir)
 
-    entries, _skips = rimport.expand_directories([link])
+    entries, _skips = rimport.expand_directories([link], tmp_path)
 
     assert entries == [rimport.Entry(link, True)]
 
@@ -84,7 +84,7 @@ def test_duplicates_collapse_and_named_wins(tmp_path):
     inner = d / "inner.nc"
     inner.write_text("data")
 
-    entries, _skips = rimport.expand_directories([d, inner])
+    entries, _skips = rimport.expand_directories([d, inner], tmp_path)
 
     assert entries == [rimport.Entry(inner, True)]
 
@@ -96,7 +96,7 @@ def test_duplicate_order_is_first_seen(tmp_path):
     (d / "a.nc").write_text("a")
     (d / "b.nc").write_text("b")
 
-    entries, _skips = rimport.expand_directories([d, d])
+    entries, _skips = rimport.expand_directories([d, d], tmp_path)
 
     assert [e.path.name for e in entries] == ["a.nc", "b.nc"]
 
@@ -110,7 +110,7 @@ def test_walk_skips_are_passed_through(tmp_path):
     os.chmod(locked, 0o000)
 
     try:
-        _entries, skips = rimport.expand_directories([d])
+        _entries, skips = rimport.expand_directories([d], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
@@ -125,7 +125,7 @@ def test_empty_directory_warns_but_is_not_a_skip(tmp_path, caplog):
     d.mkdir()
 
     with caplog.at_level(logging.WARNING, logger="rimport_relink"):
-        entries, skips = rimport.expand_directories([d])
+        entries, skips = rimport.expand_directories([d], tmp_path)
 
     assert entries == []
     assert skips == []
@@ -143,7 +143,7 @@ def test_logs_expansion_counts(tmp_path, caplog):
     (d2 / "c.nc").write_text("c")
 
     with caplog.at_level(logging.INFO, logger="rimport_relink"):
-        rimport.expand_directories([d1, d2])
+        rimport.expand_directories([d1, d2], tmp_path)
 
     assert "expanded 2 director(ies) to 3 file(s)" in caplog.text
 
@@ -154,7 +154,7 @@ def test_no_expansion_logs_no_count_line(tmp_path, caplog):
     f.write_text("data")
 
     with caplog.at_level(logging.INFO, logger="rimport_relink"):
-        rimport.expand_directories([f])
+        rimport.expand_directories([f], tmp_path)
 
     assert "expanded" not in caplog.text
 
@@ -169,7 +169,7 @@ def test_unreadable_directory_does_not_warn_that_it_is_empty(tmp_path, caplog):
 
     try:
         with caplog.at_level(logging.WARNING, logger="rimport_relink"):
-            entries, skips = rimport.expand_directories([locked])
+            entries, skips = rimport.expand_directories([locked], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
@@ -191,7 +191,7 @@ def test_discovered_walk_skip_is_warned_where_it_happened(tmp_path, caplog):
 
     try:
         with caplog.at_level(logging.WARNING, logger="rimport_relink"):
-            rimport.expand_directories([d])
+            rimport.expand_directories([d], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
@@ -207,7 +207,7 @@ def test_named_unreadable_directory_is_not_warned_as_skipped(tmp_path, caplog):
 
     try:
         with caplog.at_level(logging.WARNING, logger="rimport_relink"):
-            rimport.expand_directories([locked])
+            rimport.expand_directories([locked], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
@@ -228,7 +228,7 @@ def test_named_unreadable_directory_is_not_warned_even_when_also_discovered(tmp_
 
     try:
         with caplog.at_level(logging.WARNING, logger="rimport_relink"):
-            rimport.expand_directories([d, locked])
+            rimport.expand_directories([d, locked], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
@@ -247,7 +247,7 @@ def test_expansion_count_is_logged_before_any_skip_warning(tmp_path, caplog):
 
     try:
         with caplog.at_level(logging.INFO, logger="rimport_relink"):
-            rimport.expand_directories([d])
+            rimport.expand_directories([d], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
@@ -262,7 +262,7 @@ def test_directory_named_twice_is_walked_once(tmp_path, caplog):
     (d / "a.nc").write_text("a")
 
     with caplog.at_level(logging.INFO, logger="rimport_relink"):
-        rimport.expand_directories([d, d])
+        rimport.expand_directories([d, d], tmp_path)
 
     assert "expanded 1 director(ies) to 1 file(s)" in caplog.text
 
@@ -279,7 +279,7 @@ def test_duplicate_arguments_do_not_duplicate_a_skip(tmp_path, caplog):
 
     try:
         with caplog.at_level(logging.WARNING, logger="rimport_relink"):
-            _entries, skips = rimport.expand_directories([d, d])
+            _entries, skips = rimport.expand_directories([d, d], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
@@ -299,8 +299,50 @@ def test_overlapping_named_directories_do_not_duplicate_a_skip(tmp_path):
     os.chmod(locked, 0o000)
 
     try:
-        _entries, skips = rimport.expand_directories([d, sub])
+        _entries, skips = rimport.expand_directories([d, sub], tmp_path)
     finally:
         os.chmod(locked, 0o700)
 
     assert len(skips) == 1
+
+
+def test_directory_outside_the_root_is_not_expanded(tmp_path):
+    """Expansion is scoped to the inputdata tree. A directory outside it passes through as a
+    named entry for the pre-flight gate to reject, exactly as a nonexistent path does."""
+    root = tmp_path / "inputdata"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "a.nc").write_text("a")
+
+    entries, skips = rimport.expand_directories([outside], root)
+
+    assert entries == [rimport.Entry(outside, True)]
+    assert skips == []
+
+
+def test_directory_outside_the_root_is_not_even_walked(tmp_path, monkeypatch):
+    """Declining to expand must happen BEFORE the walk, not by discarding its results:
+    walking recurses, and the whole point is not to stat a tree we have no business in."""
+    root = tmp_path / "inputdata"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+
+    def _fail(_path):
+        raise AssertionError("walk_files must not be called for a path outside the root")
+
+    monkeypatch.setattr(rimport, "walk_files", _fail)
+
+    rimport.expand_directories([outside], root)
+
+
+def test_directory_at_the_root_itself_is_expanded(tmp_path):
+    """The boundary case: the root is not outside itself."""
+    root = tmp_path / "inputdata"
+    root.mkdir()
+    (root / "a.nc").write_text("a")
+
+    entries, _skips = rimport.expand_directories([root], root)
+
+    assert entries == [rimport.Entry(root / "a.nc", False)]

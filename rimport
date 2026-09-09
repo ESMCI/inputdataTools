@@ -269,13 +269,22 @@ def walk_files(root: Path) -> tuple[List[Path], List[Skip]]:
     return files, skips
 
 
-def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
+def expand_directories(
+    paths: Iterable[Path], inputdata_root: Path
+) -> tuple[List[Entry], List[Skip]]:
     """Replace each directory in `paths` with the files beneath it, tagging provenance.
 
-    A path is expanded only if it is a real directory. A symlink to a directory is left
-    alone as a single named entry, matching `walk_files`' refusal to descend through one.
-    Nothing here validates: a nonexistent path passes straight through as named, so
-    `main`'s pre-flight gate can reject it with its usual message.
+    A path is expanded only if it is a real directory INSIDE `inputdata_root`. A symlink to
+    a directory is left alone as a single named entry, matching `walk_files`' refusal to
+    descend through one. Nothing here validates: a nonexistent path, or a directory outside
+    the tree, passes straight through as named, so `main`'s pre-flight gate can reject it
+    with its usual message. Declining to expand is not a verdict -- it just leaves the path
+    for the gate that already knows how to judge it.
+
+    Scoping expansion to the tree matters for more than tidiness. Walking recurses, so
+    expanding a directory this tool has no business in -- a mistyped `rimport ~` -- would
+    stat an arbitrarily large tree before rejecting every file in it, and would downgrade
+    the user's own bad argument from a fatal named failure to a heap of discovered skips.
 
     Duplicates collapse in first-seen order. If the same path is both named and discovered
     -- the user typed a file that also lives inside a directory they named -- `named` wins,
@@ -283,6 +292,7 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
 
     Args:
         paths: Absolute paths from `normalize_paths`.
+        inputdata_root: Root of the inputdata tree; only directories under it are expanded.
 
     Returns:
         (entries, skips), each skip carrying its own provenance. `skips` holds two things:
@@ -313,6 +323,11 @@ def expand_directories(paths: Iterable[Path]) -> tuple[List[Entry], List[Skip]]:
             # the fatal pre-flight block and the run exits 2 having published nothing.
             skips.append(Skip(path, exc))
             continue
+        if is_real_dir and not path.resolve().is_relative_to(inputdata_root.resolve()):
+            # Outside the tree: hand it to the pre-flight gate unexpanded. Resolve both
+            # sides, as validate_source_path does, so the two agree about what "outside"
+            # means for a path reached through a symlinked parent.
+            is_real_dir = False
         if is_real_dir:
             n_dirs += 1
             found, walk_skips = walk_files(path)
@@ -430,9 +445,9 @@ def validate_source_path(
     if not src.exists():
         return FileNotFoundError(f"source not found: {src}")
 
-    if src.is_dir():
-        return RuntimeError(f"source is a directory, not a file: {src}")
-
+    # Containment is checked before the is-a-directory backstop so that a DIRECTORY outside
+    # the tree names the reason the user can act on. Told "source is a directory, not a
+    # file", they would reasonably reply that directories are supported now.
     try:
         src.resolve().relative_to(inputdata_root.resolve())
     except ValueError:
@@ -443,6 +458,9 @@ def validate_source_path(
         return RuntimeError(
             f"source not under inputdata root: {src} not in {inputdata_root}"
         )
+
+    if src.is_dir():
+        return RuntimeError(f"source is a directory, not a file: {src}")
 
     return None
 
@@ -802,7 +820,7 @@ def main(argv: List[str] | None = None) -> int:
 
     # Expand any directory argument into the files beneath it, tagging each path as named
     # (the user asked for it) or discovered (a walk found it).
-    entries, skips = expand_directories(paths)
+    entries, skips = expand_directories(paths, root)
 
     # Pre-flight: validate everything before staging anything. A NAMED bad path is fatal and
     # aborts the whole batch, so a batch containing one is never half-completed. A DISCOVERED
