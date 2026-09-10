@@ -552,7 +552,7 @@ class TestMain:
         mock_stage_data.assert_not_called()
 
         captured = capsys.readouterr()
-        assert "2 of 3 file(s) failed pre-flight validation" in captured.err
+        assert "2 of 3 item(s) failed pre-flight validation" in captured.err
         assert f"source not found: {missing}" in captured.err
         assert f"Source is a broken symlink: {broken}" in captured.err
 
@@ -609,7 +609,7 @@ class TestMain:
         # Reported inline at WARNING (stdout) as the run reaches it...
         assert "skipping" in captured.out
         # ...and repeated at ERROR (stderr) at the very end, where it cannot be scrolled past.
-        assert "1 file(s) skipped (not stageable)" in captured.err
+        assert "1 item(s) skipped (not stageable)" in captured.err
         assert "broken.nc" in captured.err
 
     @patch.object(rimport, "get_staging_root")
@@ -641,7 +641,7 @@ class TestMain:
         # Pins the named-vs-discovered split itself: only the named `missing` is fatal,
         # so the count is 1 of 2 (good.nc, discovered under subdir, does not count against
         # it) -- not 2 of 2, which is what today's un-enumerated pre-flight gate reports.
-        assert "1 of 2 file(s) failed pre-flight validation" in captured.err
+        assert "1 of 2 item(s) failed pre-flight validation" in captured.err
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
@@ -723,7 +723,7 @@ class TestMain:
         # Pins the denominator too: `locked` never became an Entry, so a count taken from
         # entries alone reports the nonsense "1 of 0". Two paths were considered here --
         # `locked` and the good.nc discovered under `ok`.
-        assert "1 of 2 file(s) failed pre-flight validation" in captured.err
+        assert "1 of 2 item(s) failed pre-flight validation" in captured.err
 
         # No named argument may have published -- not just the one that failed.
         assert not any(staging_root.rglob("*"))
@@ -757,7 +757,7 @@ class TestMain:
         captured = capsys.readouterr()
         assert "nothing was published" in captured.err
         # The directory itself is the failure, named once. Not its contents.
-        assert "1 of 1 file(s) failed pre-flight validation" in captured.err
+        assert "1 of 1 item(s) failed pre-flight validation" in captured.err
         # The reason must be the actionable one, not the is-a-directory backstop.
         assert "source not under inputdata root" in captured.err
         assert str(outside / "a.nc") not in captured.err
@@ -794,9 +794,7 @@ class TestMain:
         assert result == 2
         captured = capsys.readouterr()
         # Two distinct paths were considered: `locked` and the good.nc discovered under `ok`.
-        assert "1 of 2 file(s) failed pre-flight validation" in captured.err
-        # Count list ENTRIES, not path occurrences: the OSError repr repeats the path within
-        # a single line, so a raw substring count sees two even when one entry is printed.
+        assert "1 of 2 item(s) failed pre-flight validation" in captured.err
         assert captured.err.count(f"rimport: '{locked}'") == 1
 
     @patch.object(rimport, "get_staging_root")

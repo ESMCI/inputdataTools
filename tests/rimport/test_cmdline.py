@@ -322,7 +322,7 @@ class TestRimportCommandLine:
         )
 
         # Verify error. Assert the actual reason, not the substring "error": pre-flight
-        # reports "N of M file(s) failed pre-flight validation", which contains no such
+        # reports "N of M item(s) failed pre-flight validation", which contains no such
         # word, so a bare "error" check is satisfied only by tmp_path echoing this test's
         # own name back in the offending path.
         assert result.returncode != 0
@@ -1135,7 +1135,7 @@ class TestRimportCommandLine:
         # Verify failure: rc 2, all reasons present, correct "N of M" count. Identical for
         # both callers; not what either test discriminates on.
         assert result.returncode == 2, f"Command unexpectedly passed: {result.stdout}"
-        assert "2 of 3 file(s) failed pre-flight validation" in result.stderr
+        assert "2 of 3 item(s) failed pre-flight validation" in result.stderr
         assert f"source not found: {missing_file}" in result.stderr
         assert f"Source is a broken symlink: {broken_link}" in result.stderr
 
@@ -1315,7 +1315,7 @@ class TestRimportCommandLine:
         )
 
         assert result.returncode == 3
-        assert "1 file(s) skipped (not stageable)" in result.stderr
+        assert "1 item(s) skipped (not stageable)" in result.stderr
         assert "broken.nc" in result.stderr
         # The summary is the LAST thing on stderr. The broken-symlink message names the
         # link itself, not its target, so the final line ends with broken.nc.
@@ -1348,7 +1348,7 @@ class TestRimportCommandLine:
         )
 
         assert result.returncode == 3
-        assert "1 file(s) skipped (not stageable)" in result.stderr
+        assert "1 item(s) skipped (not stageable)" in result.stderr
 
     def test_expansion_count_is_logged_before_staging(
         self, rimport_script, test_env, rimport_env

@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  1: a file could not be staged\n"
             "  2: nothing was published -- a bad command line, a missing or empty\n"
             "     --list file, or a name you gave failing validation\n"
-            "  3: finished, but one or more files were skipped (listed at the end)\n"
+            "  3: finished, but one or more items were skipped (listed at the end)\n"
             "\n"
             "a name you gave failing is fatal (2). a file found by expanding a\n"
             "directory you named is skipped instead, and the run continues (3).\n"
@@ -122,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-c",
         action="store_true",
         help=(
-            "Check whether file(s) is/are already published, without staging anything. A bad"
+            "Check whether item(s) is/are already published, without staging anything. A bad"
             " name that you gave aborts before any file is checked, reporting all bad names"
             " at once; a file found by enumerating a directory is instead reported and"
             " skipped individually."
@@ -363,7 +363,9 @@ def expand_directories(
         # about the directory being walked: a directory can be named AND discovered beneath
         # another named one, and then both are true of it.
         if not skip.named:
-            logger.warning("%srimport: skipping '%s': %s", INDENT, skip.path, skip.reason)
+            logger.warning(
+                "%srimport: skipping '%s': %s", INDENT, skip.path, reason_text(skip.reason)
+            )
 
     entries = [Entry(path, named) for path, named in named_by_path.items()]
     return entries, skips
@@ -383,9 +385,21 @@ def report_skips(skips: List[Skip]) -> None:
     if not skips:
         return
 
-    logger.error("rimport: %d file(s) skipped (not stageable):", len(skips))
+    logger.error("rimport: %d item(s) skipped (not stageable):", len(skips))
     for skip in skips:
-        logger.error("%s%s: %s", INDENT, skip.path, skip.reason)
+        logger.error("%s%s: %s", INDENT, skip.path, reason_text(skip.reason))
+
+
+def reason_text(reason: Exception) -> str:
+    """Render a skip or failure reason for a message that already names the path.
+
+    `OSError`'s str() appends the filename, so a line built as "'<path>': <reason>" prints
+    the path twice. Its `strerror` is the same message without that, and errno is dropped
+    deliberately: "Permission denied" is what the user can act on.
+    """
+    if isinstance(reason, OSError) and reason.strerror:
+        return reason.strerror
+    return str(reason)
 
 
 def check_relink_worked(src: Path, dst: Path) -> None:
@@ -847,17 +861,19 @@ def main(argv: List[str] | None = None) -> int:
         elif entry.named:
             named_failures.append((entry.path, error))
         else:
-            logger.warning("%srimport: skipping '%s': %s", INDENT, entry.path, error)
+            logger.warning(
+                "%srimport: skipping '%s': %s", INDENT, entry.path, reason_text(error)
+            )
             skips.append(Skip(entry.path, error))
 
     if named_failures:
         logger.error(
-            "rimport: %d of %d file(s) failed pre-flight validation; nothing was published:",
+            "rimport: %d of %d item(s) failed pre-flight validation; nothing was published:",
             len(named_failures),
             n_considered,
         )
         for path, error in named_failures:
-            logger.error("%srimport: '%s': %s", INDENT, path, error)
+            logger.error("%srimport: '%s': %s", INDENT, path, reason_text(error))
         return 2
 
     # Execute the new action per file
