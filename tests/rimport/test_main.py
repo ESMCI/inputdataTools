@@ -585,6 +585,31 @@ class TestMain:
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
+    def test_check_directory_argument_reports_each_file_and_stages_nothing(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """--check reaches the same verdict on the same input without writing anything."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "a.nc").write_text("a")
+        (subdir / "b.nc").write_text("b")
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), "--check"]
+        )
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "a.nc" in captured.out and "b.nc" in captured.out
+        assert not any(staging_root.rglob("*"))
+        assert not (subdir / "a.nc").is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
     def test_discovered_failure_warns_skips_and_returns_3(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
     ):
@@ -610,6 +635,31 @@ class TestMain:
         # ...and repeated at ERROR (stderr) at the very end, where it cannot be scrolled past.
         assert "1 item(s) skipped (not stageable)" in captured.err
         assert "broken.nc" in captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_check_discovered_failure_also_returns_3(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """--check reports the same skip and the same exit code, staging nothing."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), "--check"]
+        )
+
+        assert result == 3
+        captured = capsys.readouterr()
+        assert "1 item(s) skipped (not stageable)" in captured.err
+        assert not any(staging_root.rglob("*"))
+        assert not (subdir / "good.nc").is_symlink()
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
@@ -641,6 +691,32 @@ class TestMain:
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
+    def test_check_named_failure_also_aborts_before_checking_anything(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """--check is gated by the same pre-flight, so a named failure aborts it too and the
+        good file is never reported on -- fix the bad name and re-run to see the rest."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        missing = inputdata_root / "missing.nc"
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), str(missing), "--check"]
+        )
+
+        assert result == 2
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+        assert "good.nc" not in captured.out
+        assert not any(staging_root.rglob("*"))
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
     def test_staging_error_outranks_skip_in_exit_code(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
     ):
@@ -662,10 +738,11 @@ class TestMain:
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
-    def test_check_mode_also_returns_3_for_skips(
+    def test_check_error_also_outranks_skip_in_exit_code(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
     ):
-        """--check uses the same exit codes, including 3."""
+        """Precedence 1 > 3 holds under --check: a file that fails while being checked is a
+        real failure, not a skip, even though nothing was being written."""
         inputdata_root = tmp_path / "inputdata"
         subdir = inputdata_root / "lnd"
         subdir.mkdir(parents=True)
@@ -675,11 +752,12 @@ class TestMain:
         (subdir / "good.nc").write_text("good")
         (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
 
-        result = rimport.main(
-            ["-inputdata", str(inputdata_root), str(subdir), "--check"]
-        )
+        with patch.object(rimport, "stage_data", side_effect=RuntimeError("boom")):
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(subdir), "--check"]
+            )
 
-        assert result == 3
+        assert result == 1
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
