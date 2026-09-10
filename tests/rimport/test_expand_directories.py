@@ -89,10 +89,10 @@ def test_duplicates_collapse_and_named_wins(tmp_path):
     assert entries == [rimport.Entry(inner, True)]
 
 
-def test_named_wins_over_discovered_whichever_comes_first(tmp_path):
-    """Naming the file before the directory that contains it must reach the same verdict.
-    The two orders take different routes -- one sets `named` and the walk must not clear it,
-    the other must upgrade an entry the walk already recorded."""
+def test_named_wins_when_the_file_is_named_before_its_directory(tmp_path):
+    """Naming the file before the directory that contains it reaches the same verdict as
+    naming it after (the test above). The two orders take different routes: this one sets
+    `named` first and the walk must not clear it."""
     d = tmp_path / "d"
     d.mkdir()
     inner = d / "inner.nc"
@@ -196,9 +196,8 @@ def test_unreadable_directory_does_not_warn_that_it_is_empty(tmp_path, caplog):
 
 
 def test_discovered_walk_skip_is_warned_where_it_happened(tmp_path, caplog):
-    """The spec promises every skip is reported twice. The end-of-run summary is the second
-    report; this is the first, and without it a skip during a fatal abort is reported zero
-    times."""
+    """Every skip is reported twice: here, as the run reaches it, and again in the end-of-run
+    summary. Without this first report a skip during a fatal abort is reported zero times."""
     d = tmp_path / "d"
     d.mkdir()
     (d / "a.nc").write_text("a")
@@ -213,6 +212,11 @@ def test_discovered_walk_skip_is_warned_where_it_happened(tmp_path, caplog):
         os.chmod(locked, 0o700)
 
     assert f"skipping '{locked}'" in caplog.text
+    # The line already names the path, so the reason must not repeat it. OSError's str()
+    # appends the filename and prefixes the errno; strerror is the part worth reading.
+    assert "Permission denied" in caplog.text
+    assert "[Errno" not in caplog.text
+    assert caplog.text.count(str(locked)) == 1
 
 
 def test_named_unreadable_directory_is_not_warned_as_skipped(tmp_path, caplog):

@@ -12,19 +12,19 @@ Notes:
 - The `relink.py` script was previously used for step 3 above, but that functionality is now built into `rimport`. It's still there if you want to use it by itself.
 - A relative filename passed to `rimport` directly (via `--file` or as a positional argument) is always resolved against your current directory — never against the inputdata root, and it doesn't matter whether you're running from inside or outside the inputdata tree. Pass an absolute path if you want to name a file without regard to your current directory.
 - A relative entry in a `--list` file is always resolved against that list file's own directory — again never against the inputdata root, wherever the list file itself lives. Pass absolute entries in the list if you want them independent of the list file's location.
-- Before staging anything, `rimport` validates every path you named (all `--file`/`--list`/positional entries together). If any of them fail — missing, a broken symlink, outside the inputdata root, etc. — none of them are touched, and every failing path is reported at once so you can fix them all in one pass. An invalid file found by expanding a directory you named is not covered by this promise; it is skipped on its own, and the rest of the run continues (see "Directory arguments" below). This is a promise about rejected input, not about success: pre-flight passing doesn't guarantee the whole batch will finish, since a file can still fail later for a reason pre-flight can't see (e.g. a runtime/relink failure partway through).
+- Before staging anything, `rimport` validates every path you named (all `--file`/`--list`/positional entries together). If any of them fail — missing, a broken symlink, outside the inputdata root, etc. — none of them are touched, and every failing path is reported at once so you can fix them all in one pass. Anything found by expanding a directory you named — an invalid file, or a subdirectory that cannot be read — is not covered by this promise; it is skipped on its own, and the rest of the run continues (see "Directory arguments" below). This is a promise about rejected input, not about success: pre-flight passing doesn't guarantee the whole batch will finish, since a file can still fail later for a reason pre-flight can't see (e.g. a runtime/relink failure partway through).
 - `--check` is gated by the same pre-flight validation as a real run: if any path you named fails validation, `rimport` reports the failures and exits without checking (or reporting on) any of the other files. This is deliberate, not a bug — fix the bad entries and re-run to see the rest.
 
 ### Directory arguments
 
-Any name you give `rimport` — positional, `--file`, or a `--list` entry — may be a directory inside the inputdata tree. Every file beneath it is enumerated recursively and acted on. A directory outside the tree is rejected without being enumerated, exactly as a file outside it is. The directory itself is never copied to staging or replaced with a symlink. A symlink to a directory is the one carve-out: it is not expanded, and is treated as a single entry.
+Any name you give `rimport` — positional, `--file`, or a `--list` entry — may be a directory inside the inputdata tree. Every file beneath it is enumerated recursively and acted on. A directory outside the tree is rejected without being enumerated, exactly as a file outside it is. The directory itself is never copied to staging or replaced with a symlink. A symlink to a directory is the one carve-out: it is not expanded, but treated as a single entry — reported as already published if it points into the staging directory, and an error otherwise.
 
 Why symlinks to directories are left alone, rather than enumerated:
 
 - A symlink into staging is what `rimport` itself creates, so a symlink here is usually a published file rather than a detour to follow. Treating it as a single entry is what lets you re-run `rimport` over a tree it has already published.
 - Enumeration never follows a directory symlink either, so it cannot loop on a link that points at its own ancestor, and cannot wander outside the directory you named and publish files you did not ask for. The rule for a name you give matches the rule used while walking, so a path behaves the same whichever way `rimport` reaches it.
 
-A file found by enumeration that cannot be staged does not abort the run. It is reported, skipped, and repeated in a summary at the end so it does not scroll away. A bad name you gave directly is still fatal, and nothing is published.
+Anything found by enumeration that cannot be staged does not abort the run — an unstageable file, or a subdirectory that cannot be read. It is reported, skipped, and repeated in a summary at the end so it does not scroll away. A bad name you gave directly is still fatal, and nothing is published.
 
 ## Exit codes
 
@@ -37,7 +37,7 @@ A file found by enumeration that cannot be staged does not abort the run. It is 
 
 When more than one code applies, the precedence is 2 > 1 > 3 > 0.
 
-A name you gave failing is fatal (2). An invalid file found by expanding a directory you named is skipped instead, and the run continues (3).
+A name you gave failing is fatal (2). Anything found by expanding a directory you named is skipped instead, and the run continues (3).
 
 ## Filenames and metadata:
 

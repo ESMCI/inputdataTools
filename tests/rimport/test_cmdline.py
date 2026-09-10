@@ -1383,5 +1383,5 @@ class TestRimportCommandLine:
         assert result.returncode == 0
         assert (
             result.stdout.index("expanded 1 director(ies) to 2 file(s)")
-            < result.stdout.index("staged")
+            < result.stdout.index("[rimport] staged")
         )

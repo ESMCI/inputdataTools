@@ -66,8 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
             "     --list file, or a name you gave failing validation\n"
             "  3: finished, but one or more items were skipped (listed at the end)\n"
             "\n"
-            "a name you gave failing is fatal (2). a file found by expanding a\n"
-            "directory you named is skipped instead, and the run continues (3).\n"
+            "a name you gave failing is fatal (2). anything found by expanding a\n"
+            "directory you named -- a bad file, or a subdirectory that cannot be\n"
+            "read -- is skipped instead, and the run continues (3).\n"
             "when several apply, the precedence is 2 > 1 > 3 > 0.\n"
         ),
         formatter_class=_EpilogRawFormatter,
@@ -124,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Check whether item(s) is/are already published, without staging anything. A bad"
             " name that you gave aborts before any file is checked, reporting all bad names"
-            " at once; a file found by enumerating a directory is instead reported and"
+            " at once; anything found by enumerating a directory is instead reported and"
             " skipped individually."
         ),
     )
@@ -395,7 +396,11 @@ def reason_text(reason: Exception) -> str:
 
     `OSError`'s str() appends the filename, so a line built as "'<path>': <reason>" prints
     the path twice. Its `strerror` is the same message without that, and errno is dropped
-    deliberately: "Permission denied" is what the user can act on.
+    deliberately: "Permission denied" is what the user can act on. This is safe only because
+    every OSError reaching here was raised on the same path the message names.
+
+    It changes nothing for the RuntimeErrors `validate_source_path` builds: those carry no
+    `strerror`, and several write the path into their own text, which this cannot undo.
     """
     if isinstance(reason, OSError) and reason.strerror:
         return reason.strerror

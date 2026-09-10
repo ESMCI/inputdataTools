@@ -741,8 +741,9 @@ class TestMain:
     def test_check_error_also_outranks_skip_in_exit_code(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
     ):
-        """Precedence 1 > 3 holds under --check: a file that fails while being checked is a
-        real failure, not a skip, even though nothing was being written."""
+        """Precedence 1 > 3 holds under --check: an item that fails while being checked is a
+        real failure, not a skip, even though nothing was being written. Also pins that the
+        flag reaches stage_data, which is the only place --check changes what happens."""
         inputdata_root = tmp_path / "inputdata"
         subdir = inputdata_root / "lnd"
         subdir.mkdir(parents=True)
@@ -752,12 +753,17 @@ class TestMain:
         (subdir / "good.nc").write_text("good")
         (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
 
-        with patch.object(rimport, "stage_data", side_effect=RuntimeError("boom")):
+        with patch.object(
+            rimport, "stage_data", side_effect=RuntimeError("boom")
+        ) as mock_stage_data:
             result = rimport.main(
                 ["-inputdata", str(inputdata_root), str(subdir), "--check"]
             )
 
         assert result == 1
+        mock_stage_data.assert_called_once_with(
+            subdir / "good.nc", inputdata_root, staging_root, True
+        )
 
     @patch.object(rimport, "get_staging_root")
     @patch.object(rimport, "ensure_running_as")
