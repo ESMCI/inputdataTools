@@ -15,7 +15,7 @@ import pwd
 import shutil
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, NamedTuple
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -33,6 +33,20 @@ INPUTDATA_URL = "https://osdf-data.gdex.ucar.edu/ncar/gdex/d651077/cesmdata/inpu
 logger = shared.logger
 
 
+class _EpilogRawFormatter(argparse.HelpFormatter):
+    """Wrap the description as argparse normally would, but leave the epilog verbatim.
+
+    RawDescriptionHelpFormatter would preserve the epilog's exit-code list, but it also
+    stops re-wrapping the description, which then renders as one long line on a narrow
+    terminal. Only the epilog needs its line breaks kept.
+    """
+
+    def _fill_text(self, text, width, indent):
+        if text.lstrip().startswith("exit codes:"):
+            return "".join(indent + line for line in text.splitlines(keepends=True))
+        return super()._fill_text(text, width, indent)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build and configure the argument parser for rimport.
 
@@ -44,6 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
             f"Copy files from CESM inputdata directory ({DEFAULT_INPUTDATA_ROOT}) to a publishing"
             " directory, then replace the original with a symlink to the copy."
         ),
+        epilog=(
+            "exit codes:\n"
+            "  0: everything staged or checked, nothing skipped\n"
+            "  1: a file could not be staged\n"
+            "  2: nothing was published -- a bad command line, a missing or empty\n"
+            "     --list file, or a name you gave failing validation\n"
+            "  3: finished, but one or more items were skipped (listed at the end)\n"
+            "\n"
+            "a name you gave failing is fatal (2). anything found by expanding a\n"
+            "directory you named -- a bad file, or a subdirectory that cannot be\n"
+            "read -- is skipped instead, and the run continues (3).\n"
+            "when several apply, the precedence is 2 > 1 > 3 > 0.\n"
+        ),
+        formatter_class=_EpilogRawFormatter,
         add_help=False,  # Disable automatic help to add custom -help flag
     )
 
@@ -55,7 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Provide a file to import. Must be in the CESM inputdata directory. A relative name"
             " is resolved against the current directory; there is no fallback to the"
-            " inputdata root."
+            " inputdata root. If the name is a directory, every file beneath it is"
+            " enumerated recursively and acted on; a symlink to a directory is not expanded."
         ),
     )
 
@@ -67,7 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Provide a file that contains a list of filenames to import. All filenames in the list"
             " must be in the CESM inputdata directory. A relative entry is resolved against the"
-            " list file's own directory, wherever that directory is."
+            " list file's own directory, wherever that directory is. A list entry naming a"
+            " directory is enumerated recursively, the same as a name given on the command"
+            " line."
         ),
     )
 
@@ -76,8 +107,10 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         help=(
             "One or more files to process. (Optional; can use --file instead to process just one.)"
-            " A relative name is resolved against the current directory; there is no fallback to"
-            " the inputdata root."
+            " Must be in the CESM inputdata directory. A relative name is resolved against the"
+            " current directory; there is no fallback to the inputdata root. If the name is a"
+            " directory, every file beneath it is enumerated recursively and acted on; a symlink"
+            " to a directory is not expanded."
         ),
     )
 
@@ -90,9 +123,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-c",
         action="store_true",
         help=(
-            "Check whether file(s) is/are already published, without staging anything. A bad"
-            " path anywhere in the batch aborts before any file is checked, reporting all bad"
-            " paths at once."
+            "Check whether item(s) is/are already published, without staging anything. A bad"
+            " name that you gave aborts before any file is checked, reporting all bad names"
+            " at once; anything found by enumerating a directory is instead reported and"
+            " skipped individually."
         ),
     )
 
@@ -163,6 +197,216 @@ def normalize_paths(root: Path, relnames: Iterable[str]) -> List[Path]:
     return paths
 
 
+class Entry(NamedTuple):
+    """One path to consider staging, and how it got into the batch.
+
+    `named` is True when the user typed this path (positional, `--file`, or a `--list`
+    entry) and False when a directory walk discovered it. The distinction is what lets a
+    bad file inside a large tree warn-and-skip while a bad path the user asked for by name
+    still aborts the whole batch.
+    """
+
+    path: Path
+    named: bool
+
+
+class Skip(NamedTuple):
+    """One path that will not be staged, the reason why, and whether the user named it.
+
+    Both validation failures on discovered files and directories that could not be read
+    become Skips, so `report_skips` can present them in one block.
+
+    `named` defaults to False so a walker that has no idea what the user typed can build a
+    Skip with two arguments. `expand_directories` is the one place that knows the whole
+    batch, so it is the one place that fills this in; `main` then trusts it rather than
+    re-deriving it, which previously meant two copies of the same set having to agree.
+    """
+
+    path: Path
+    reason: Exception
+    named: bool = False
+
+
+def walk_files(root: Path) -> tuple[List[Path], List[Skip]]:
+    """Recursively list the non-directory entries under `root`.
+
+    Descends only into real directories (`follow_symlinks=False`), so the walk cannot
+    leave the tree the user named and cannot loop on a cyclic link. A symlink is therefore
+    always a leaf: it is returned as an entry to act on, including when its target happens
+    to be a directory, and `validate_source_path` decides what that means.
+
+    Every non-directory entry is returned -- regular files, symlinks, dotfiles alike. There
+    is no owner filter (unlike relink's walker): rimport runs as the staging owner and the
+    point is to publish what is there.
+
+    Entries are sorted at each level so output and tests are deterministic; `os.scandir`
+    order is otherwise arbitrary.
+
+    Args:
+        root: Directory to walk.
+
+    Returns:
+        (files, skips). `files` are absolute paths in depth-first, per-level sorted order.
+        `skips` are directories that could not be read; an unreadable directory does not
+        raise and does not abort the rest of the walk.
+    """
+    files: List[Path] = []
+    skips: List[Skip] = []
+
+    try:
+        with os.scandir(root) as scan:
+            children = sorted(scan, key=lambda entry: entry.name)
+    except OSError as exc:
+        return [], [Skip(Path(root), exc)]
+
+    for child in children:
+        child_path = Path(child.path)
+        if child.is_dir(follow_symlinks=False):
+            sub_files, sub_skips = walk_files(child_path)
+            files.extend(sub_files)
+            skips.extend(sub_skips)
+        else:
+            files.append(child_path)
+
+    return files, skips
+
+
+def expand_directories(
+    paths: Iterable[Path], inputdata_root: Path
+) -> tuple[List[Entry], List[Skip]]:
+    """Replace each directory in `paths` with the files beneath it, tagging provenance.
+
+    A path is expanded only if it is a real directory INSIDE `inputdata_root`. A symlink to
+    a directory is left alone as a single named entry, matching `walk_files`' refusal to
+    descend through one. Nothing here validates: a nonexistent path, or a directory outside
+    the tree, passes straight through as named, so `main`'s pre-flight gate can reject it
+    with its usual message. Declining to expand is not a verdict -- it just leaves the path
+    for the gate that already knows how to judge it.
+
+    Scoping expansion to the tree matters for more than tidiness. Walking recurses, so
+    expanding a directory this tool has no business in -- a mistyped `rimport ~` -- would
+    stat an arbitrarily large tree before rejecting every file in it, and would downgrade
+    the user's own bad argument from a fatal named failure to a heap of discovered skips.
+
+    Duplicates collapse in first-seen order. If the same path is both named and discovered
+    -- the user typed a file that also lives inside a directory they named -- `named` wins,
+    so the path the user asked for by name keeps its fatal-on-failure treatment.
+
+    Args:
+        paths: Absolute paths from `normalize_paths`.
+        inputdata_root: Root of the inputdata tree; only directories under it are expanded.
+
+    Returns:
+        (entries, skips), each skip carrying its own provenance. `skips` holds two things:
+        directories that could not be read during a walk, and named paths whose is_dir()
+        probe itself raised (a file under an unreadable parent, say). A walk skip is usually
+        discovered, and a discovered skip warns and continues with exit 3 rather than
+        aborting; only a skip the user named is fatal. Skips are collapsed by path, so a
+        directory named twice yields one.
+    """
+    # Consumed twice -- once to walk, once to test provenance -- so a generator will not do.
+    # Collapsing here means a directory named twice is walked once, so it counts once toward
+    # the expansion total and reports anything unreadable beneath it once.
+    paths = list(dict.fromkeys(paths))
+    named_paths = set(paths)
+    named_by_path: dict[Path, bool] = {}
+    skips: List[Skip] = []
+    n_dirs = 0
+    expanded_files: set[Path] = set()
+
+    for path in paths:
+        try:
+            is_expandable_dir = path.is_dir() and not path.is_symlink()
+        except OSError as exc:
+            # Path.is_dir() ignores only ENOENT, ENOTDIR, EBADF and ELOOP. It propagates
+            # everything else -- EACCES included, on every supported version -- so a path
+            # under an unreadable parent would abort the run with a traceback. Record it and
+            # let main decide: every path here was NAMED by the user, so main routes it to
+            # the fatal pre-flight block and the run exits 2 having published nothing.
+            skips.append(Skip(path, exc))
+            continue
+        if is_expandable_dir and not path.resolve().is_relative_to(inputdata_root.resolve()):
+            # Outside the tree: hand it to the pre-flight gate unexpanded. Resolve both
+            # sides, as validate_source_path does, so the two agree about what "outside"
+            # means for a path reached through a symlinked parent.
+            is_expandable_dir = False
+        if is_expandable_dir:
+            n_dirs += 1
+            found, walk_skips = walk_files(path)
+            skips.extend(walk_skips)
+            if not found and not walk_skips:
+                logger.warning("rimport: no files found under %s", path)
+            for found_path in found:
+                expanded_files.add(found_path)
+                named_by_path.setdefault(found_path, False)
+        else:
+            # A named path always wins over the same path discovered by a walk.
+            named_by_path[path] = True
+
+    # Collapse by path and stamp provenance before anything counts or prints these. Two
+    # named directories can overlap -- `<tree>` and `<tree>/sub` -- and then the same
+    # unreadable grandchild is found by both walks.
+    deduped: dict[Path, Skip] = {}
+    for skip in skips:
+        deduped.setdefault(skip.path, Skip(skip.path, skip.reason, skip.path in named_paths))
+    skips = list(deduped.values())
+
+    if n_dirs:
+        logger.info(
+            "rimport: expanded %d director(ies) to %d file(s)", n_dirs, len(expanded_files)
+        )
+
+    for skip in skips:
+        # Report a DISCOVERED skip here, during expansion, where the run reached it; the
+        # end-of-run summary repeats it. A skip the user NAMED is not reported here at all:
+        # main treats it as a fatal failure, and calling it "skipping" would contradict the
+        # "nothing was published" that follows. Note this asks about the whole batch, not
+        # about the directory being walked: a directory can be named AND discovered beneath
+        # another named one, and then both are true of it.
+        if not skip.named:
+            logger.warning(
+                "%srimport: skipping '%s': %s", INDENT, skip.path, reason_text(skip.reason)
+            )
+
+    entries = [Entry(path, named) for path, named in named_by_path.items()]
+    return entries, skips
+
+
+def report_skips(skips: List[Skip]) -> None:
+    """Re-list every skipped path at the very end of the run.
+
+    Each skip was already reported inline, at WARNING level, where it happened. This block
+    repeats them at ERROR level -- so stderr, and so surviving `-q` -- because in a run over
+    a large tree the inline warnings scroll away and the whole point is that a file which
+    went unpublished cannot be missed.
+
+    Args:
+        skips: Every skipped path with its reason. An empty list prints nothing.
+    """
+    if not skips:
+        return
+
+    logger.error("rimport: %d item(s) skipped (not stageable):", len(skips))
+    for skip in skips:
+        logger.error("%s%s: %s", INDENT, skip.path, reason_text(skip.reason))
+
+
+def reason_text(reason: Exception) -> str:
+    """Render a skip or failure reason for a message that already names the path.
+
+    `OSError`'s str() appends the filename, so a line built as "'<path>': <reason>" prints
+    the path twice. Its `strerror` is the same message without that, and errno is dropped
+    deliberately: "Permission denied" is what the user can act on. This is safe only because
+    every OSError reaching here was raised on the same path the message names.
+
+    It changes nothing for the RuntimeErrors `validate_source_path` builds: those carry no
+    `strerror`, and several write the path into their own text, which this cannot undo.
+    """
+    if isinstance(reason, OSError) and reason.strerror:
+        return reason.strerror
+    return str(reason)
+
+
 def check_relink_worked(src: Path, dst: Path) -> None:
     """Check whether relink worked
 
@@ -182,11 +426,11 @@ def validate_source_path(
 ) -> Exception | None:
     """Run stage_data's read-only guardrails against `src` without raising or logging.
 
-    This is the pre-flight half of `stage_data`'s checks: broken symlink, live symlink whose
-    target is outside staging, missing file, directory, outside the inputdata root, and already
-    under the staging directory. It performs no I/O beyond stat-ing `src` and its resolved
-    target — in particular it never makes a network call — so it is cheap to run over an entire
-    batch before anything is staged.
+    This is the pre-flight half of `stage_data`'s checks, in the order they run: broken
+    symlink, live symlink whose target is outside staging, missing file, outside the inputdata
+    root, already under the staging directory, and directory. It performs no I/O beyond
+    stat-ing `src` and its resolved target — in particular it never makes a network call — so
+    it is cheap to run over an entire batch before anything is staged.
 
     Critically, a *live* symlink whose target resolves under `staging_root` is NOT a failure:
     that is the normal state of a file that has already been published and linked by a previous
@@ -221,9 +465,9 @@ def validate_source_path(
     if not src.exists():
         return FileNotFoundError(f"source not found: {src}")
 
-    if src.is_dir():
-        return RuntimeError(f"source is a directory, not a file: {src}")
-
+    # Containment is checked before the is-a-directory backstop so that a DIRECTORY outside
+    # the tree names the reason the user can act on. Told "source is a directory, not a
+    # file", they would reasonably reply that directories are supported now.
     try:
         src.resolve().relative_to(inputdata_root.resolve())
     except ValueError:
@@ -234,6 +478,9 @@ def validate_source_path(
         return RuntimeError(
             f"source not under inputdata root: {src} not in {inputdata_root}"
         )
+
+    if src.is_dir():
+        return RuntimeError(f"source is a directory, not a file: {src}")
 
     return None
 
@@ -435,6 +682,10 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
     entries, and all `--list` entries (which never anchor to cwd), are unaffected by an
     undeterminable cwd.
 
+    An empty or whitespace-only `file`/`items_to_process` entry is rejected with `(None, 2)`
+    before any anchoring happens, because an empty name would otherwise resolve to the cwd
+    and be expanded.
+
     Args:
         file (str): Single file to process.
         filelist (str): File containing list of files to process.
@@ -445,6 +696,17 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
         int:  Result code
     """
     cli_args = ([file] if file is not None else []) + list(items_to_process or [])
+    # An empty name anchors to cwd and resolves to the cwd itself, which then expands: an
+    # unset shell variable (`rimport "$maybe_unset"`) would recursively publish the whole
+    # subtree the user is standing in. Refuse it.
+    empty_cli_args = [name for name in cli_args if not str(name).strip()]
+    if empty_cli_args:
+        logger.error(
+            "rimport: %d empty filename argument(s) given; refusing to resolve an empty "
+            "name to the current directory. Did a shell variable expand to nothing?",
+            len(empty_cli_args),
+        )
+        return None, 2
     relative_cli_args = [name for name in cli_args if not Path(name).is_absolute()]
 
     cwd = None
@@ -507,14 +769,17 @@ def main(argv: List[str] | None = None) -> int:
         argv: Command-line arguments to parse. If None, uses sys.argv.
 
     Returns:
-        int: Exit code (0 for success, 1 if any files had errors, 2 for fatal errors).
+        int: Exit code (0 for success with nothing skipped, 1 if any files had errors,
+           2 for fatal errors, or 3 if the run completed but one or more paths were
+           skipped).
 
     Environment Variables:
         RIMPORT_SKIP_USER_CHECK: Set to "1" to skip automatic user switching.
         RIMPORT_STAGING: Override the default staging root directory.
 
     Exit Codes:
-        0: All files staged successfully (or, under --check, checked without error).
+        0: All files staged successfully (or, under --check, checked without error), and
+           nothing was skipped.
         1: Pre-flight validation passed, but one or more files failed while actually being
            staged or relinked -- a genuine runtime failure, not a rejected input (errors
            printed to stderr for each).
@@ -534,6 +799,14 @@ def main(argv: List[str] | None = None) -> int:
                inputdata root, etc.). Pre-flight checks every resolved path before
                staging anything and reports every failure at once, so a bad path never
                leaves the batch half-published. This gate applies to --check runs too.
+        3: The run finished -- nothing was rejected outright and no file failed while being
+           staged or relinked -- but at least one discovered path was skipped rather than
+           staged. Two things cause that, and either alone is enough: a file found by
+           expanding a directory argument failed pre-flight validation, or a directory
+           beneath a named one could not be read. Each skip is warned about inline during
+           expansion or pre-flight and the full list is repeated on stderr at the very end,
+           so a skipped path cannot be missed. Note that only DISCOVERED paths are skipped;
+           the same failure on a path the user named is fatal, and exits 2.
     """
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -564,27 +837,52 @@ def main(argv: List[str] | None = None) -> int:
     paths = normalize_paths(root, files_to_process)
     staging_root = get_staging_root()
 
-    # Pre-flight: validate every path before staging anything, so a batch containing a bad
-    # path is reported (all bad paths at once) instead of half-completing. Runs for --check
-    # too: a bad entry aborts the whole batch rather than being reported per-file.
-    failures = []
-    for p in paths:
-        error = validate_source_path(p, root, staging_root)
-        if error is not None:
-            failures.append((p, error))
-    if failures:
+    # Expand any directory argument into the files beneath it, tagging each path as named
+    # (the user asked for it) or discovered (a walk found it).
+    entries, skips = expand_directories(paths, root)
+
+    # Pre-flight: validate everything before staging anything. A NAMED bad path is fatal and
+    # aborts the whole batch, so a batch containing one is never half-completed. A DISCOVERED
+    # bad path is only a skip: one unstageable file inside a large tree must not block the
+    # thousands of good ones around it.
+    # A directory the user NAMED that could not be read is a named failure, not a skip.
+    # `expand_directories` stamped that on each Skip; deriving it a second time here would
+    # mean two sets that have to agree, and nothing enforcing it. An unreadable directory
+    # found BENEATH a named one stays a skip: the user did not name it, so it is discovered,
+    # and discovered failures warn and skip.
+    named_failures: List[tuple[Path, Exception]] = [
+        (skip.path, skip.reason) for skip in skips if skip.named
+    ]
+    skips = [skip for skip in skips if not skip.named]
+    # An unreadable named directory never became an Entry, so it has to be added to the
+    # count of paths considered; otherwise a lone one reports "1 of 0".
+    n_considered = len(entries) + len(named_failures)
+    to_stage: List[Path] = []
+    for entry in entries:
+        error = validate_source_path(entry.path, root, staging_root)
+        if error is None:
+            to_stage.append(entry.path)
+        elif entry.named:
+            named_failures.append((entry.path, error))
+        else:
+            logger.warning(
+                "%srimport: skipping '%s': %s", INDENT, entry.path, reason_text(error)
+            )
+            skips.append(Skip(entry.path, error))
+
+    if named_failures:
         logger.error(
-            "rimport: %d of %d file(s) failed pre-flight validation; nothing was published:",
-            len(failures),
-            len(paths),
+            "rimport: %d of %d item(s) failed pre-flight validation; nothing was published:",
+            len(named_failures),
+            n_considered,
         )
-        for p, error in failures:
-            logger.error("%srimport: '%s': %s", INDENT, p, error)
+        for path, error in named_failures:
+            logger.error("%srimport: '%s': %s", INDENT, path, reason_text(error))
         return 2
 
     # Execute the new action per file
     errors = 0
-    for p in paths:
+    for p in to_stage:
         logger.info("'%s':", p)
         try:
             stage_data(p, root, staging_root, args.check)
@@ -593,10 +891,18 @@ def main(argv: List[str] | None = None) -> int:
             errors += 1
             logger.error("%srimport: error processing %s: %s", INDENT, p, e)
 
+    if not errors and not args.check:
+        logger.info("\nNo need to run relink.py")
+
+    # Last, so it cannot be scrolled past.
+    report_skips(skips)
+
+    # Precedence 2 > 1 > 3 > 0; 2 already returned above. A real staging failure must never
+    # be masked by "completed with skips".
     if errors:
         return 1
-    if not args.check:
-        logger.info("\nNo need to run relink.py")
+    if skips:
+        return 3
     return 0
 
 

@@ -534,8 +534,8 @@ class TestMain:
         valid = inputdata_root / "good.nc"
         valid.write_text("data")
         missing = inputdata_root / "missing.nc"
-        bad_dir = inputdata_root / "adir"
-        bad_dir.mkdir()
+        broken = inputdata_root / "broken.nc"
+        broken.symlink_to(inputdata_root / "nonexistent_target.nc")
 
         result = rimport.main(
             [
@@ -543,7 +543,7 @@ class TestMain:
                 str(inputdata_root),
                 str(valid),
                 str(missing),
-                str(bad_dir),
+                str(broken),
             ]
         )
 
@@ -551,10 +551,419 @@ class TestMain:
         mock_stage_data.assert_not_called()
 
         captured = capsys.readouterr()
-        assert "2 of 3 file(s) failed pre-flight validation" in captured.err
+        assert "2 of 3 item(s) failed pre-flight validation" in captured.err
         assert f"source not found: {missing}" in captured.err
-        assert f"source is a directory, not a file: {bad_dir}" in captured.err
+        assert f"Source is a broken symlink: {broken}" in captured.err
 
         # The valid file was never staged or turned into a symlink.
         assert not (staging_root / "good.nc").exists()
         assert not valid.is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_directory_argument_stages_the_files_inside_it(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A directory argument publishes the files beneath it, and is never itself staged."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "a.nc").write_text("a")
+        (subdir / "b.nc").write_text("b")
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(subdir)])
+
+        assert result == 0
+        assert (staging_root / "lnd" / "a.nc").read_text() == "a"
+        assert (staging_root / "lnd" / "b.nc").read_text() == "b"
+        assert (subdir / "a.nc").is_symlink()
+        assert subdir.is_dir() and not subdir.is_symlink()
+        assert not (staging_root / "lnd").is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_check_directory_argument_reports_each_file_and_stages_nothing(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """--check reaches the same verdict on the same input without writing anything."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "a.nc").write_text("a")
+        (subdir / "b.nc").write_text("b")
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), "--check"]
+        )
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "a.nc" in captured.out and "b.nc" in captured.out
+        assert not any(staging_root.rglob("*"))
+        assert not (subdir / "a.nc").is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_discovered_failure_warns_skips_and_returns_3(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A bad file FOUND BY A WALK must not abort the batch: the good files still
+        publish, the bad one is skipped, and the run reports 3."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(subdir)])
+
+        assert result == 3
+        assert (staging_root / "lnd" / "good.nc").read_text() == "good"
+        assert (subdir / "good.nc").is_symlink()
+        captured = capsys.readouterr()
+        # Reported inline at WARNING (stdout) as the run reaches it...
+        assert "skipping" in captured.out
+        # ...and repeated at ERROR (stderr) at the very end, where it cannot be scrolled past.
+        assert "1 item(s) skipped (not stageable)" in captured.err
+        assert "broken.nc" in captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_check_discovered_failure_also_returns_3(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """--check reports the same skip and the same exit code, staging nothing."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), "--check"]
+        )
+
+        assert result == 3
+        captured = capsys.readouterr()
+        assert "1 item(s) skipped (not stageable)" in captured.err
+        assert not any(staging_root.rglob("*"))
+        assert not (subdir / "good.nc").is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_named_failure_still_aborts_everything_including_discovered_files(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """Provenance asymmetry: a path the USER typed is still fatal, and it takes the
+        whole batch down with it -- including good files discovered under a good
+        directory."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        missing = inputdata_root / "missing.nc"
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), str(missing)]
+        )
+
+        assert result == 2
+        assert not any(staging_root.rglob("*"))
+        assert not (subdir / "good.nc").is_symlink()
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+        assert "1 of 2 item(s) failed pre-flight validation" in captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_check_named_failure_also_aborts_before_checking_anything(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """--check is gated by the same pre-flight, so a named failure aborts it too and the
+        good file is never reported on -- fix the bad name and re-run to see the rest."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        missing = inputdata_root / "missing.nc"
+
+        result = rimport.main(
+            ["-inputdata", str(inputdata_root), str(subdir), str(missing), "--check"]
+        )
+
+        assert result == 2
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+        assert "good.nc" not in captured.out
+        assert not any(staging_root.rglob("*"))
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_staging_error_outranks_skip_in_exit_code(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
+    ):
+        """Precedence 1 > 3: a real staging failure must not be masked by 'completed with
+        skips'."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        with patch.object(rimport, "stage_data", side_effect=RuntimeError("boom")):
+            result = rimport.main(["-inputdata", str(inputdata_root), str(subdir)])
+
+        assert result == 1
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_check_error_also_outranks_skip_in_exit_code(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
+    ):
+        """Precedence 1 > 3 holds under --check: an item that fails while being checked is a
+        real failure, not a skip, even though nothing was being written. Also pins that the
+        flag reaches stage_data, which is the only place --check changes what happens."""
+        inputdata_root = tmp_path / "inputdata"
+        subdir = inputdata_root / "lnd"
+        subdir.mkdir(parents=True)
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        (subdir / "good.nc").write_text("good")
+        (subdir / "broken.nc").symlink_to(inputdata_root / "nonexistent.nc")
+
+        with patch.object(
+            rimport, "stage_data", side_effect=RuntimeError("boom")
+        ) as mock_stage_data:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(subdir), "--check"]
+            )
+
+        assert result == 1
+        mock_stage_data.assert_called_once_with(
+            subdir / "good.nc", inputdata_root, staging_root, True
+        )
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_named_unreadable_directory_is_fatal_not_a_skip(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A directory the USER NAMED that cannot be read is a named failure, so it aborts
+        the batch -- it must not be demoted to a skip that lets other named arguments
+        publish anyway. Demoting it would turn a hard stop into a partial publish.
+        """
+        inputdata_root = tmp_path / "inputdata"
+        locked = inputdata_root / "locked"
+        locked.mkdir(parents=True)
+        (locked / "unreachable.nc").write_text("data")
+        other = inputdata_root / "ok"
+        other.mkdir()
+        (other / "good.nc").write_text("good")
+        (other / "also-good.nc").write_text("good")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(locked), str(other)]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+        # `locked` never became an Entry, so a denominator taken from entries alone would
+        # report "1 of 2". Three items were considered: `locked` and the two files
+        # discovered under `ok`. Two arguments were given, so a denominator that counted
+        # those instead would also read "1 of 2".
+        assert "1 of 3 item(s) failed pre-flight validation" in captured.err
+
+        # No file may have published -- not just the one that failed.
+        assert not any(staging_root.rglob("*"))
+        assert not (other / "good.nc").is_symlink()
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_named_directory_outside_the_inputdata_root_is_rejected_not_walked(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A named path outside the inputdata root is fatal whether it is a file or a
+        directory. Expanding the directory instead would demote the user's own bad argument
+        to a pile of discovered skips and a "finished" exit 3.
+
+        It must also not be walked. Expansion recurses, so a mistyped `rimport ~` would
+        otherwise stat an arbitrarily large tree before rejecting every file in it.
+        """
+        inputdata_root = tmp_path / "inputdata"
+        inputdata_root.mkdir()
+        outside = tmp_path / "elsewhere"
+        (outside / "deep").mkdir(parents=True)
+        (outside / "a.nc").write_text("a")
+        (outside / "deep" / "b.nc").write_text("b")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+
+        result = rimport.main(["-inputdata", str(inputdata_root), str(outside)])
+
+        assert result == 2
+        captured = capsys.readouterr()
+        assert "nothing was published" in captured.err
+        # The directory itself is the failure, named once. Not its contents.
+        assert "1 of 1 item(s) failed pre-flight validation" in captured.err
+        # The reason must be the actionable one, not the is-a-directory backstop.
+        assert "source not under inputdata root" in captured.err
+        assert str(outside / "a.nc") not in captured.err
+        # Nothing beneath it may have been enumerated.
+        assert "expanded" not in captured.out
+        assert not any(staging_root.rglob("*"))
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_naming_an_unreadable_directory_twice_reports_it_once(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """The same path given twice is one bad path, not two: it is listed once, and
+        counted once in both halves of the "N of M" total."""
+        inputdata_root = tmp_path / "inputdata"
+        locked = inputdata_root / "locked"
+        locked.mkdir(parents=True)
+        other = inputdata_root / "ok"
+        other.mkdir()
+        (other / "good.nc").write_text("good")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(locked), str(locked), str(other)]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        captured = capsys.readouterr()
+        # Two distinct paths were considered: `locked` and the good.nc discovered under `ok`.
+        assert "1 of 2 item(s) failed pre-flight validation" in captured.err
+        assert captured.err.count(f"rimport: '{locked}'") == 1
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_unreadable_subdirectory_stays_a_skip(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """An unreadable directory found BENEATH a named one was not named by the user, so
+        it is not a named failure: it is warned about, skipped, and its readable siblings
+        still publish. Only the path the user typed is allowed to abort the batch."""
+        inputdata_root = tmp_path / "inputdata"
+        tree = inputdata_root / "tree"
+        tree.mkdir(parents=True)
+        (tree / "good.nc").write_text("good")
+        locked = tree / "locked"
+        locked.mkdir()
+        (locked / "unreachable.nc").write_text("data")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(["-inputdata", str(inputdata_root), str(tree)])
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 3
+        assert (staging_root / "tree" / "good.nc").read_text() == "good"
+        captured = capsys.readouterr()
+        assert "skipped (not stageable)" in captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_walk_skip_is_still_reported_when_the_run_aborts(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
+    ):
+        """A skipped path must be reported even when the run goes on to abort. A named
+        failure returns before the end-of-run summary, so if the skip were not also
+        reported inline it would appear nowhere at all."""
+        inputdata_root = tmp_path / "inputdata"
+        tree = inputdata_root / "tree"
+        tree.mkdir(parents=True)
+        (tree / "good.nc").write_text("good")
+        locked = tree / "locked"
+        locked.mkdir()
+        (locked / "hidden.nc").write_text("data")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        missing = inputdata_root / "missing.nc"
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(tree), str(missing)]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        assert not any(staging_root.rglob("*"))
+        captured = capsys.readouterr()
+        assert str(locked) in captured.out + captured.err
+
+    @patch.object(rimport, "get_staging_root")
+    @patch.object(rimport, "ensure_running_as")
+    def test_unreadable_parent_directory_is_an_error_not_a_traceback(
+        self, _mock_ensure_running_as, mock_get_staging_root, tmp_path
+    ):
+        """Naming a file inside a directory that cannot be read is a user error, and the help
+        text promises exit 2 for one. Path.is_dir() propagates EACCES rather than returning
+        False -- it ignores only ENOENT, ENOTDIR, EBADF and ELOOP -- so an unguarded probe
+        turns that into a stack trace on every supported version.
+
+        An escaping exception errors this test rather than failing it, so reaching the
+        assertions below at all is half of what is being checked."""
+        inputdata_root = tmp_path / "inputdata"
+        locked = inputdata_root / "locked"
+        locked.mkdir(parents=True)
+        (locked / "hidden.nc").write_text("data")
+        staging_root = tmp_path / "staging"
+        staging_root.mkdir()
+        mock_get_staging_root.return_value = staging_root
+        os.chmod(locked, 0o000)
+
+        try:
+            result = rimport.main(
+                ["-inputdata", str(inputdata_root), str(locked / "hidden.nc")]
+            )
+        finally:
+            os.chmod(locked, 0o700)
+
+        assert result == 2
+        assert not any(staging_root.rglob("*"))

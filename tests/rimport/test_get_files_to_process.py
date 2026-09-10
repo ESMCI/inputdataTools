@@ -646,3 +646,41 @@ class TestGetRelnamesToProcess:
         assert filename in caplog.text
         for item_name in item_names:
             assert item_name in caplog.text
+
+    def test_empty_positional_is_rejected(self, caplog):
+        """An empty positional must not anchor to cwd and become a whole-tree expansion."""
+        with caplog.at_level(logging.ERROR, logger="rimport_relink"):
+            files, status = rimport.get_files_to_process(None, None, [""])
+
+        assert files is None
+        assert status == 2
+        assert "empty filename" in caplog.text
+
+    def test_empty_file_option_is_rejected(self, caplog):
+        """Same guard on --file."""
+        with caplog.at_level(logging.ERROR, logger="rimport_relink"):
+            files, status = rimport.get_files_to_process("", None, [])
+
+        assert files is None
+        assert status == 2
+        assert "empty filename" in caplog.text
+
+    def test_whitespace_only_argument_is_rejected(self, caplog):
+        """A name that is empty after stripping is just as dangerous as ''."""
+        with caplog.at_level(logging.ERROR, logger="rimport_relink"):
+            files, status = rimport.get_files_to_process(None, None, ["   "])
+
+        assert files is None
+        assert status == 2
+        assert "empty filename" in caplog.text
+
+    def test_empty_argument_rejected_even_alongside_valid_ones(self, tmp_path, caplog):
+        """One empty name poisons the batch; nothing is resolved."""
+        good = tmp_path / "good.nc"
+        good.write_text("data")
+
+        with caplog.at_level(logging.ERROR, logger="rimport_relink"):
+            files, status = rimport.get_files_to_process(None, None, [str(good), ""])
+
+        assert files is None
+        assert status == 2
