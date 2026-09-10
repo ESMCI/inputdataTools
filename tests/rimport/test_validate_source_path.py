@@ -133,7 +133,7 @@ def test_error_directory_outside_root_names_containment_not_directoryness(tmp_pa
     result = rimport.validate_source_path(src, inputdata_root, staging_root)
     assert isinstance(result, RuntimeError)
     assert "source not under inputdata root" in str(result)
-    assert "not a file" not in str(result)
+    assert "is a directory" not in str(result)
 
 
 def test_error_file_outside_inputdata_root(tmp_path):

@@ -133,7 +133,7 @@ def test_empty_directory_warns_but_is_not_a_skip(tmp_path, caplog):
 
 
 def test_logs_expansion_counts(tmp_path, caplog):
-    """The blast radius is visible before anything is staged."""
+    """The blast radius is printed by `expand_directories()` -- i.e., before anything is staged."""
     d1 = tmp_path / "d1"
     d1.mkdir()
     (d1 / "a.nc").write_text("a")
@@ -199,7 +199,7 @@ def test_discovered_walk_skip_is_warned_where_it_happened(tmp_path, caplog):
 
 
 def test_named_unreadable_directory_is_not_warned_as_skipped(tmp_path, caplog):
-    """The counterpart. Since Task 11c a NAMED unreadable directory is fatal, so main reports
+    """A NAMED unreadable directory is fatal, and main reports it as such. Warning
     it as a failure; warning "skipping" here too would contradict "nothing was published"."""
     locked = tmp_path / "locked"
     locked.mkdir()
@@ -215,10 +215,11 @@ def test_named_unreadable_directory_is_not_warned_as_skipped(tmp_path, caplog):
 
 
 def test_named_unreadable_directory_is_not_warned_even_when_also_discovered(tmp_path, caplog):
-    """The guard must ask "did the user name this path?", not "is this the directory I am
-    walking right now?". Naming both a tree and an unreadable directory inside it made the
-    walk of the tree warn "skipping" for a path main then reports as a fatal failure -- the
-    self-contradiction the guard exists to prevent, reached by a different route."""
+    """A path can be named AND discovered at once: name a tree and an unreadable directory
+    inside it, and the walk of the tree finds what the user also typed. It is still named,
+    so main reports it as a fatal failure and nothing here may call it "skipping" -- the two
+    messages contradict each other. Provenance is whole-batch membership, not "is this the
+    directory being walked"."""
     d = tmp_path / "d"
     d.mkdir()
     (d / "a.nc").write_text("a")
@@ -254,9 +255,9 @@ def test_expansion_count_is_logged_before_any_skip_warning(tmp_path, caplog):
     assert caplog.text.index("expanded 1 director(ies)") < caplog.text.index("skipping")
 
 
-def test_directory_named_twice_is_walked_once(tmp_path, caplog):
-    """Naming the same directory twice is one directory, not two. Counting the walks instead
-    of the directories made the blast-radius line overstate itself."""
+def test_directory_named_twice_is_reported_once(tmp_path, caplog):
+    """Naming the same directory twice is one directory, not two, so the blast-radius line
+    counts it once."""
     d = tmp_path / "d"
     d.mkdir()
     (d / "a.nc").write_text("a")
@@ -268,9 +269,9 @@ def test_directory_named_twice_is_walked_once(tmp_path, caplog):
 
 
 def test_duplicate_arguments_do_not_duplicate_a_skip(tmp_path, caplog):
-    """Files de-duplicate; skips did not. Naming a directory twice walked it twice and
-    recorded the same unreadable subdirectory twice, so it was warned twice, listed twice in
-    the end-of-run summary, and counted twice."""
+    """One unreadable directory is one skip, however many of the named arguments reach it.
+    Otherwise it is warned about twice, listed twice in the end-of-run summary, and counted
+    twice in the total."""
     d = tmp_path / "d"
     d.mkdir()
     locked = d / "locked"

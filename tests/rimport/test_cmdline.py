@@ -973,8 +973,8 @@ class TestRimportCommandLine:
         assert (staging_mirror / "data.nc").read_text() == "clm2 data"
         assert inner_file.is_symlink()
 
-        # The 75c79cd anti-corruption assertion, preserved: the DIRECTORY itself was never
-        # renamed, never symlinked away, and no failed-rollback '.tmp' was left behind.
+        # The directory itself must survive untouched: still a real directory, never
+        # symlinked away, and no '.tmp' left behind by a half-finished replacement.
         assert subdir.is_dir() and not subdir.is_symlink(), (
             f"clm2 should still be a plain, non-symlink directory; "
             f"is_dir={subdir.is_dir()} is_symlink={subdir.is_symlink()}"
@@ -1248,8 +1248,8 @@ class TestRimportCommandLine:
         assert result.returncode == 0, f"Command unexpectedly failed: {result.stderr}"
         assert (staging_root / "lnd" / "clm2" / "a.nc").read_text() == "a"
         assert (staging_root / "lnd" / "clm2" / "sub" / "b.nc").read_text() == "b"
-        # The directory itself must never be staged or replaced -- the corruption 75c79cd
-        # was added to prevent.
+        # The directory itself must survive untouched: still a real directory, never
+        # replaced by a symlink to a staged copy of itself.
         assert d.is_dir() and not d.is_symlink()
 
     def test_list_entry_expands_a_directory(self, rimport_script, test_env, rimport_env):

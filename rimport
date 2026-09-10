@@ -691,10 +691,9 @@ def get_files_to_process(file: str, filelist: str, items_to_process: list):
         int:  Result code
     """
     cli_args = ([file] if file is not None else []) + list(items_to_process or [])
-    # An empty name would anchor to cwd and resolve to the cwd itself. That was harmless
-    # only while a directory was rejected outright; now that a directory expands, an unset
-    # shell variable (`rimport "$maybe_unset"`) would recursively publish the whole subtree
-    # the user is standing in. Refuse it.
+    # An empty name anchors to cwd and resolves to the cwd itself, which then expands: an
+    # unset shell variable (`rimport "$maybe_unset"`) would recursively publish the whole
+    # subtree the user is standing in. Refuse it.
     empty_cli_args = [name for name in cli_args if not str(name).strip()]
     if empty_cli_args:
         logger.error(

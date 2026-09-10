@@ -517,9 +517,8 @@ class TestMain:
         tmp_path,
         capsys,
     ):
-        """Test main()'s pre-flight gate: a batch with a mix of valid and invalid paths
-        (missing, and a broken symlink) returns 2, logs every failure, and never calls
-        stage_data — not even for the valid path.
+        """Test main()'s pre-flight gate: a batch with a mix of valid and invalid paths returns
+        2, logs every failure, and never calls stage_data — not even for the valid path.
 
         Unlike the other main() tests in this file, this one does NOT mock
         validate_source_path (or normalize_paths): it lets the real pre-flight gate run
@@ -638,9 +637,6 @@ class TestMain:
         assert not (subdir / "good.nc").is_symlink()
         captured = capsys.readouterr()
         assert "nothing was published" in captured.err
-        # Pins the named-vs-discovered split itself: only the named `missing` is fatal,
-        # so the count is 1 of 2 (good.nc, discovered under subdir, does not count against
-        # it) -- not 2 of 2, which is what today's un-enumerated pre-flight gate reports.
         assert "1 of 2 item(s) failed pre-flight validation" in captured.err
 
     @patch.object(rimport, "get_staging_root")
@@ -692,11 +688,7 @@ class TestMain:
     ):
         """A directory the USER NAMED that cannot be read is a named failure, so it aborts
         the batch -- it must not be demoted to a skip that lets other named arguments
-        publish anyway.
-
-        Skip carries no provenance, so without an explicit check main's gate cannot tell a
-        named unreadable directory from one discovered inside a named tree. Getting this
-        wrong turns a hard stop into a partial publish.
+        publish anyway. Demoting it would turn a hard stop into a partial publish.
         """
         inputdata_root = tmp_path / "inputdata"
         locked = inputdata_root / "locked"
@@ -725,7 +717,7 @@ class TestMain:
         # `locked` and the good.nc discovered under `ok`.
         assert "1 of 2 item(s) failed pre-flight validation" in captured.err
 
-        # No named argument may have published -- not just the one that failed.
+        # No file may have published -- not just the one that failed.
         assert not any(staging_root.rglob("*"))
         assert not (other / "good.nc").is_symlink()
 
@@ -734,12 +726,12 @@ class TestMain:
     def test_named_directory_outside_the_inputdata_root_is_rejected_not_walked(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
     ):
-        """A named FILE outside the inputdata root has always been fatal. A directory must not
-        get a softer verdict just because it can now be expanded: walking it turns the user's
-        own bad argument into a pile of discovered skips and a "finished" exit 3.
+        """A named path outside the inputdata root is fatal whether it is a file or a
+        directory. Expanding the directory instead would demote the user's own bad argument
+        to a pile of discovered skips and a "finished" exit 3.
 
-        It must also not be walked at all. Expansion recurses, so a mistyped `rimport ~`
-        would otherwise stat an arbitrarily large tree before rejecting every file in it.
+        It must also not be walked. Expansion recurses, so a mistyped `rimport ~` would
+        otherwise stat an arbitrarily large tree before rejecting every file in it.
         """
         inputdata_root = tmp_path / "inputdata"
         inputdata_root.mkdir()
@@ -770,9 +762,8 @@ class TestMain:
     def test_naming_an_unreadable_directory_twice_reports_it_once(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
     ):
-        """The same path given twice is one bad path, not two. Walking it twice recorded two
-        identical Skips, which inflated both the failure list and the denominator: the user
-        typed two arguments and got "2 of 3 file(s) failed", with one path printed twice."""
+        """The same path given twice is one bad path, not two: it is listed once, and
+        counted once in both halves of the "N of M" total."""
         inputdata_root = tmp_path / "inputdata"
         locked = inputdata_root / "locked"
         locked.mkdir(parents=True)
@@ -802,9 +793,9 @@ class TestMain:
     def test_unreadable_subdirectory_stays_a_skip(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
     ):
-        """The counterpart: an unreadable directory DISCOVERED beneath a named directory is
-        not a named failure, so it stays a warn-and-skip and its readable siblings still
-        publish. This is what stops the fix for the named case from over-reaching."""
+        """An unreadable directory found BENEATH a named one was not named by the user, so
+        it is not a named failure: it is warned about, skipped, and its readable siblings
+        still publish. Only the path the user typed is allowed to abort the batch."""
         inputdata_root = tmp_path / "inputdata"
         tree = inputdata_root / "tree"
         tree.mkdir(parents=True)
@@ -832,9 +823,9 @@ class TestMain:
     def test_walk_skip_is_still_reported_when_the_run_aborts(
         self, _mock_ensure_running_as, mock_get_staging_root, tmp_path, capsys
     ):
-        """A named failure returns before the end-of-run summary, so a walk skip that is not
-        reported inline is never reported at all -- breaking the spec's promise that every
-        skip is reported twice."""
+        """A skipped path must be reported even when the run goes on to abort. A named
+        failure returns before the end-of-run summary, so if the skip were not also
+        reported inline it would appear nowhere at all."""
         inputdata_root = tmp_path / "inputdata"
         tree = inputdata_root / "tree"
         tree.mkdir(parents=True)
