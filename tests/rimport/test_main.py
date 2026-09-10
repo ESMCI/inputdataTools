@@ -697,6 +697,7 @@ class TestMain:
         other = inputdata_root / "ok"
         other.mkdir()
         (other / "good.nc").write_text("good")
+        (other / "also-good.nc").write_text("good")
         staging_root = tmp_path / "staging"
         staging_root.mkdir()
         mock_get_staging_root.return_value = staging_root
@@ -712,10 +713,11 @@ class TestMain:
         assert result == 2
         captured = capsys.readouterr()
         assert "nothing was published" in captured.err
-        # Pins the denominator too: `locked` never became an Entry, so a count taken from
-        # entries alone reports the nonsense "1 of 0". Two paths were considered here --
-        # `locked` and the good.nc discovered under `ok`.
-        assert "1 of 2 item(s) failed pre-flight validation" in captured.err
+        # `locked` never became an Entry, so a denominator taken from entries alone would
+        # report "1 of 2". Three items were considered: `locked` and the two files
+        # discovered under `ok`. Two arguments were given, so a denominator that counted
+        # those instead would also read "1 of 2".
+        assert "1 of 3 item(s) failed pre-flight validation" in captured.err
 
         # No file may have published -- not just the one that failed.
         assert not any(staging_root.rglob("*"))
@@ -859,7 +861,10 @@ class TestMain:
         """Naming a file inside a directory that cannot be read is a user error, and the help
         text promises exit 2 for one. Path.is_dir() propagates EACCES rather than returning
         False -- it ignores only ENOENT, ENOTDIR, EBADF and ELOOP -- so an unguarded probe
-        turns that into a stack trace on every supported version."""
+        turns that into a stack trace on every supported version.
+
+        An escaping exception errors this test rather than failing it, so reaching the
+        assertions below at all is half of what is being checked."""
         inputdata_root = tmp_path / "inputdata"
         locked = inputdata_root / "locked"
         locked.mkdir(parents=True)

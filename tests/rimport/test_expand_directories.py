@@ -89,16 +89,33 @@ def test_duplicates_collapse_and_named_wins(tmp_path):
     assert entries == [rimport.Entry(inner, True)]
 
 
-def test_duplicate_order_is_first_seen(tmp_path):
-    """De-duplication preserves the order a path was first encountered."""
+def test_named_wins_over_discovered_whichever_comes_first(tmp_path):
+    """Naming the file before the directory that contains it must reach the same verdict.
+    The two orders take different routes -- one sets `named` and the walk must not clear it,
+    the other must upgrade an entry the walk already recorded."""
     d = tmp_path / "d"
     d.mkdir()
-    (d / "a.nc").write_text("a")
-    (d / "b.nc").write_text("b")
+    inner = d / "inner.nc"
+    inner.write_text("data")
 
-    entries, _skips = rimport.expand_directories([d, d], tmp_path)
+    entries, _skips = rimport.expand_directories([inner, d], tmp_path)
 
-    assert [e.path.name for e in entries] == ["a.nc", "b.nc"]
+    assert entries == [rimport.Entry(inner, True)]
+
+
+def test_duplicate_order_is_first_seen(tmp_path):
+    """De-duplication preserves the order a path was first encountered, across arguments."""
+    d1 = tmp_path / "d1"
+    d1.mkdir()
+    (d1 / "b.nc").write_text("b")
+    d2 = tmp_path / "d2"
+    d2.mkdir()
+    (d2 / "a.nc").write_text("a")
+
+    # d1 first, so its file leads, even though "a.nc" sorts before "b.nc" within a walk.
+    entries, _skips = rimport.expand_directories([d1, d2, d1], tmp_path)
+
+    assert [e.path.name for e in entries] == ["b.nc", "a.nc"]
 
 
 def test_walk_skips_are_passed_through(tmp_path):

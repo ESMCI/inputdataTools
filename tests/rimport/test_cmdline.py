@@ -1069,7 +1069,11 @@ class TestRimportCommandLine:
         assert not inner_file.is_symlink()
 
         # The file is reported on its own terms, and the directory itself is never
-        # described as published or downloadable.
+        # described as published or downloadable. rimport heads each reported item with
+        # "'<path>':", so the directory's own header is what must be absent -- its name
+        # appears anyway inside the path of the file beneath it.
+        assert f"'{inner_file}':" in result.stdout
+        assert f"'{subdir}':" not in result.stdout
         assert "not already published" in result.stdout
         assert "available for download" not in result.stdout.lower()
         assert subdir.is_dir() and not subdir.is_symlink()
@@ -1353,7 +1357,8 @@ class TestRimportCommandLine:
     def test_expansion_count_is_logged_before_staging(
         self, rimport_script, test_env, rimport_env
     ):
-        """The blast radius is visible before anything is written."""
+        """The blast radius reaches the user before the first file is written, so a run over
+        an unexpectedly large tree can still be interrupted."""
         inputdata_root = test_env["inputdata_root"]
 
         subdir = inputdata_root / "lnd"
@@ -1376,4 +1381,7 @@ class TestRimportCommandLine:
         )
 
         assert result.returncode == 0
-        assert "expanded 1 director(ies) to 2 file(s)" in result.stdout
+        assert (
+            result.stdout.index("expanded 1 director(ies) to 2 file(s)")
+            < result.stdout.index("staged")
+        )
