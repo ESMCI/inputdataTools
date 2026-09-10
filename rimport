@@ -315,7 +315,7 @@ def expand_directories(
 
     for path in paths:
         try:
-            is_real_dir = path.is_dir() and not path.is_symlink()
+            is_expandable_dir = path.is_dir() and not path.is_symlink()
         except OSError as exc:
             # Path.is_dir() ignores only ENOENT, ENOTDIR, EBADF and ELOOP. It propagates
             # everything else -- EACCES included, on every supported version -- so a path
@@ -324,12 +324,12 @@ def expand_directories(
             # the fatal pre-flight block and the run exits 2 having published nothing.
             skips.append(Skip(path, exc))
             continue
-        if is_real_dir and not path.resolve().is_relative_to(inputdata_root.resolve()):
+        if is_expandable_dir and not path.resolve().is_relative_to(inputdata_root.resolve()):
             # Outside the tree: hand it to the pre-flight gate unexpanded. Resolve both
             # sides, as validate_source_path does, so the two agree about what "outside"
             # means for a path reached through a symlinked parent.
-            is_real_dir = False
-        if is_real_dir:
+            is_expandable_dir = False
+        if is_expandable_dir:
             n_dirs += 1
             found, walk_skips = walk_files(path)
             skips.extend(walk_skips)
@@ -862,14 +862,14 @@ def main(argv: List[str] | None = None) -> int:
 
     # Execute the new action per file
     errors = 0
-    for path in to_stage:
-        logger.info("'%s':", path)
+    for p in to_stage:
+        logger.info("'%s':", p)
         try:
-            stage_data(path, root, staging_root, args.check)
+            stage_data(p, root, staging_root, args.check)
         except Exception as e:  # pylint: disable=broad-exception-caught
             # General Exception keeps CLI robust for batch runs
             errors += 1
-            logger.error("%srimport: error processing %s: %s", INDENT, path, e)
+            logger.error("%srimport: error processing %s: %s", INDENT, p, e)
 
     if not errors and not args.check:
         logger.info("\nNo need to run relink.py")
