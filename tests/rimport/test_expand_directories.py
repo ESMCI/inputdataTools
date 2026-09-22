@@ -316,6 +316,19 @@ def test_directory_named_twice_is_reported_once(tmp_path, caplog):
     assert "expanded 1 director(ies) to 1 file(s)" in caplog.text
 
 
+def test_empty_directory_named_twice_warns_once(tmp_path, caplog):
+    """One empty directory is one warning, however many of the named arguments reach it.
+    The count line and the skips are already pinned against duplicate arguments; without
+    this the emptiness warning is the one report that could double."""
+    d = tmp_path / "empty"
+    d.mkdir()
+
+    with caplog.at_level(logging.WARNING, logger="rimport_relink"):
+        rimport.expand_directories([d, d], tmp_path)
+
+    assert caplog.text.count("no files found") == 1
+
+
 def test_duplicate_arguments_do_not_duplicate_a_skip(tmp_path, caplog):
     """One unreadable directory is one skip, however many of the named arguments reach it.
     Otherwise it is warned about twice, listed twice in the end-of-run summary, and counted
