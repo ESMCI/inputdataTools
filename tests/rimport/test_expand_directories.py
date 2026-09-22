@@ -300,6 +300,7 @@ def test_expansion_count_is_logged_before_any_emptiness_warning(tmp_path, caplog
     assert caplog.text.index("expanded 2 director(ies)") < caplog.text.index("no files found")
     assert caplog.text.index("no files found") < caplog.text.index("skipping")
     assert f"{INDENT}rimport: no files found under {empty}" in caplog.text
+    assert f"{INDENT}rimport: skipping '{locked}'" in caplog.text
 
 
 def test_directory_named_twice_is_reported_once(tmp_path, caplog):
