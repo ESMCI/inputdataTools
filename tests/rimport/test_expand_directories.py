@@ -7,6 +7,8 @@ import logging
 import importlib.util
 from importlib.machinery import SourceFileLoader
 
+from shared import INDENT
+
 
 # Import rimport module from file without .py extension
 rimport_path = os.path.join(
@@ -274,6 +276,30 @@ def test_expansion_count_is_logged_before_any_skip_warning(tmp_path, caplog):
         os.chmod(locked, 0o700)
 
     assert caplog.text.index("expanded 1 director(ies)") < caplog.text.index("skipping")
+
+
+def test_expansion_count_is_logged_before_any_emptiness_warning(tmp_path, caplog):
+    """The count line is the blast radius, and it belongs at the top where it cannot be
+    pushed down the screen by one warning per empty directory named. Both warnings this
+    function emits sit below it, and both are indented to say so."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "a.nc").write_text("a")
+    locked = d / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.INFO, logger="rimport_relink"):
+            rimport.expand_directories([empty, d], tmp_path)
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert caplog.text.index("expanded 2 director(ies)") < caplog.text.index("no files found")
+    assert caplog.text.index("no files found") < caplog.text.index("skipping")
+    assert f"{INDENT}rimport: no files found under {empty}" in caplog.text
 
 
 def test_directory_named_twice_is_reported_once(tmp_path, caplog):
