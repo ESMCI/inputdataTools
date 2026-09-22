@@ -311,6 +311,7 @@ def expand_directories(
     named_paths = set(paths)
     named_by_path: dict[Path, bool] = {}
     skips: List[Skip] = []
+    empty: List[Path] = []
     n_dirs = 0
     expanded_files: set[Path] = set()
 
@@ -335,7 +336,10 @@ def expand_directories(
             found, walk_skips = walk_files(path)
             skips.extend(walk_skips)
             if not found and not walk_skips:
-                logger.warning("rimport: no files found under %s", path)
+                # Collected, not reported: every warning this function emits is logged
+                # below the count. A walk that returned nothing because it could not be
+                # read is not an empty directory, and is reported as a skip instead.
+                empty.append(path)
             for found_path in found:
                 expanded_files.add(found_path)
                 named_by_path.setdefault(found_path, False)
@@ -351,10 +355,16 @@ def expand_directories(
         deduped.setdefault(skip.path, Skip(skip.path, skip.reason, skip.path in named_paths))
     skips = list(deduped.values())
 
+    # Everything below is logged after the count, and indented under it. The count is the
+    # blast radius -- the one line worth reading before a large run is left to finish -- so
+    # it stays at the top of the output however many directories turn out to warn.
     if n_dirs:
         logger.info(
             "rimport: expanded %d director(ies) to %d file(s)", n_dirs, len(expanded_files)
         )
+
+    for path in empty:
+        logger.warning("%srimport: no files found under %s", INDENT, path)
 
     for skip in skips:
         # Report a DISCOVERED skip here, during expansion, where the run reached it; the
