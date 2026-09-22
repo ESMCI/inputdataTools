@@ -7,6 +7,8 @@ import logging
 import importlib.util
 from importlib.machinery import SourceFileLoader
 
+from shared import INDENT
+
 
 # Import rimport module from file without .py extension
 rimport_path = os.path.join(
@@ -276,6 +278,31 @@ def test_expansion_count_is_logged_before_any_skip_warning(tmp_path, caplog):
     assert caplog.text.index("expanded 1 director(ies)") < caplog.text.index("skipping")
 
 
+def test_expansion_count_is_logged_before_any_emptiness_warning(tmp_path, caplog):
+    """The count line is the blast radius, and it belongs at the top where it cannot be
+    pushed down the screen by one warning per empty directory named. Both warnings this
+    function emits sit below it, and both are indented to say so."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "a.nc").write_text("a")
+    locked = d / "locked"
+    locked.mkdir()
+    os.chmod(locked, 0o000)
+
+    try:
+        with caplog.at_level(logging.INFO, logger="rimport_relink"):
+            rimport.expand_directories([empty, d], tmp_path)
+    finally:
+        os.chmod(locked, 0o700)
+
+    assert caplog.text.index("expanded 2 director(ies)") < caplog.text.index("no files found")
+    assert caplog.text.index("no files found") < caplog.text.index("skipping")
+    assert f"{INDENT}rimport: no files found under {empty}" in caplog.text
+    assert f"{INDENT}rimport: skipping '{locked}'" in caplog.text
+
+
 def test_directory_named_twice_is_reported_once(tmp_path, caplog):
     """Naming the same directory twice is one directory, not two, so the blast-radius line
     counts it once."""
@@ -287,6 +314,19 @@ def test_directory_named_twice_is_reported_once(tmp_path, caplog):
         rimport.expand_directories([d, d], tmp_path)
 
     assert "expanded 1 director(ies) to 1 file(s)" in caplog.text
+
+
+def test_empty_directory_named_twice_warns_once(tmp_path, caplog):
+    """One empty directory is one warning, however many of the named arguments reach it.
+    The count line and the skips are already pinned against duplicate arguments; without
+    this the emptiness warning is the one report that could double."""
+    d = tmp_path / "empty"
+    d.mkdir()
+
+    with caplog.at_level(logging.WARNING, logger="rimport_relink"):
+        rimport.expand_directories([d, d], tmp_path)
+
+    assert caplog.text.count("no files found") == 1
 
 
 def test_duplicate_arguments_do_not_duplicate_a_skip(tmp_path, caplog):
